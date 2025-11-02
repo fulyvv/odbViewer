@@ -7,7 +7,6 @@
 #include <QStandardItemModel>
 #include <QStandardItem>
 #include <map>
-
 #include <vtkRenderer.h>
 #include <vtkRenderWindow.h>
 #include <vtkSmartPointer.h>
@@ -26,7 +25,7 @@ MainWindow::MainWindow(QWidget *parent)
     auto style = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
     ui->vtkWidget->interactor()->SetInteractorStyle(style);
 
-	connect(ui->actionopen, &QAction::triggered, this, &MainWindow::openFile);
+    connect(ui->actionopen, &QAction::triggered, this, &MainWindow::openFile);
     connect(ui->actionsave_as, &QAction::triggered, this, &MainWindow::saveFile);
     connect(ui->treeView, &QTreeView::activated, this, &MainWindow::onTreeItemActivated);
 
@@ -35,6 +34,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_treeModel->setColumnCount(1);
     m_treeModel->setHorizontalHeaderLabels({tr("模型")});
     ui->treeView->setModel(m_treeModel);
+
 }
 
 MainWindow::~MainWindow()
@@ -65,6 +65,9 @@ void MainWindow::openFile() {
         m_vtkDisplay.displaySolid(m_gridBuilder->getGrid());
         m_vtkDisplay.setCameraView();
         m_vtkDisplay.addAxes();
+
+        // 构建完成后释放 readOdb 中的几何缓存，保留索引映射
+        m_odb->releaseGeometryCache();
 
         // 推迟场读取：打开时不读取 U/UR/S，按需加载
         const auto frames = m_odb->getAvailableStepsFrames();
@@ -154,7 +157,6 @@ void MainWindow::buildModelTree()
     }
 }
 
-
 void MainWindow::onTreeItemActivated(const QModelIndex& index)
 {
     if (!m_odb || !m_treeModel) return;
@@ -202,10 +204,18 @@ void MainWindow::onTreeItemActivated(const QModelIndex& index)
             if (!m_gridBuilder) {
                 m_gridBuilder = std::make_unique<CreateVTKUnstucturedGrid>(*m_odb);
             }
-            const FieldData& fd = it->second;
+            FieldData& fd = it->second;
             if (!m_gridBuilder->addFieldData(fd)) {
                 QMessageBox::warning(this, tr("Warning"), tr("添加字段失败: %1").arg(fieldName));
                 return;
+            }
+            // 视图激活后，减少双驻留：清理 FieldData 的值缓存
+            if (fd.type == FieldType::DISPLACEMENT || fd.type == FieldType::ROTATION) {
+                std::vector<float>().swap(fd.nodeValues);
+                std::vector<uint8_t>().swap(fd.nodeValidFlags);
+            } else if (fd.type == FieldType::STRESS) {
+                std::vector<float>().swap(fd.elementValues);
+                std::vector<uint8_t>().swap(fd.elementValidFlags);
             }
 
             // 对 U/UR 计算模长并显示
@@ -255,8 +265,8 @@ void MainWindow::saveFile()
 
         // 若当前已读取某帧场数据，则将所有可用场变量写入
         if (!m_odb->m_fieldDataMap.empty()) {
-            for (const auto& kv : m_odb->m_fieldDataMap) {
-                const FieldData& fd = kv.second;
+            for (auto& kv : m_odb->m_fieldDataMap) {
+                FieldData& fd = kv.second;
                 if (fd.type == FieldType::STRESS) {
                     // 写入应力张量并计算/输出 Mises
                     grid.addStressField(fd, "ALL");
@@ -277,4 +287,3 @@ void MainWindow::saveFile()
         return;
     }
 }
-

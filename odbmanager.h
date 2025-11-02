@@ -33,20 +33,21 @@ struct StepFrameInfo {
         : stepName(name), frameIndex(frame), frameValue(value), description(desc) {
     }
 };
-// 场变量数据结构
+// 场变量数据结构（内存优化：连续float存储 + uint8_t有效标记）
 struct FieldData {
     FieldType type;
     std::string name;           // 场变量名称 (U, UR, S)
     std::string description;    // 描述信息
     std::vector<std::string> componentLabels;  // 分量名称 (U1,U2,U3 或 S11,S22,S33,S12,S13,S23)
+    int components{0};          // 分量数量
 
-    // 节点数据 (位移、旋转)
-    std::vector<std::vector<double>> nodeValues;  // [nodeIndex][componentIndex]
-    std::vector<bool> nodeValidFlags;             // [nodeIndex] 节点数据有效性标志
+    // 节点数据 (位移、旋转) — 扁平化：size = m_nodesNum * components
+    std::vector<float> nodeValues;      // 连续内存 [nodeIndex * components + c]
+    std::vector<uint8_t> nodeValidFlags;// [nodeIndex] 节点数据有效性标志 (0/1)
 
-    // 单元数据 (应力)
-    std::vector<std::vector<double>> elementValues; // [elementIndex][componentIndex]
-    std::vector<bool> elementValidFlags;            // [elementIndex] 单元数据有效性标志
+    // 单元数据 (应力) — 扁平化：size = m_elementsNum * components
+    std::vector<float> elementValues;   // 连续内存 [elementIndex * components + c]
+    std::vector<uint8_t> elementValidFlags; // [elementIndex] 单元数据有效性标志 (0/1)
 
     // 元数据
     std::string unit;          // 单位mm或者MPa
@@ -87,6 +88,8 @@ public:
     const std::string& getOdbBaseName() const;
     const std::string& getOdbFullName() const;
 
+    // 在构建 VTK 网格后释放几何缓存（保留轻量索引映射）
+    void releaseGeometryCache();
 
 private:
     readOdb(const readOdb&) = delete;

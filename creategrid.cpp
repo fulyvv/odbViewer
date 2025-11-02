@@ -2,6 +2,7 @@
 #include <vtkUnsignedCharArray.h>
 #include <vtkIdTypeArray.h>
 #include <vtkFloatArray.h>
+#include <vtkCellType.h>
 
 CreateVTKUnstucturedGrid::CreateVTKUnstucturedGrid(const readOdb& odb)
     : m_odb(odb)
@@ -66,7 +67,6 @@ void CreateVTKUnstucturedGrid::buildGeometry()
     cells->SetData(offsets, connectivity);
     m_grid->SetCells(types, cells);
 }
-
 int CreateVTKUnstucturedGrid::abaqusToVTKCellType(const std::string& abaqusType)
 {
     static const std::unordered_map<std::string, int> map = {
@@ -94,12 +94,12 @@ int CreateVTKUnstucturedGrid::abaqusToVTKCellType(const std::string& abaqusType)
     return -1;
 }
 
-void CreateVTKUnstucturedGrid::addPointScalar(const std::string& name, const std::vector<double>& values)
+void CreateVTKUnstucturedGrid::addPointScalar(const std::string& name, const std::vector<float>& values)
 {
     if (values.size() != m_odb.m_nodesNum) {
         throw std::runtime_error("addPointScalar: size mismatch with node count");
     }
-    vtkSmartPointer<vtkDoubleArray> arr = vtkSmartPointer<vtkDoubleArray>::New();
+    vtkSmartPointer<vtkFloatArray> arr = vtkSmartPointer<vtkFloatArray>::New();
     arr->SetName(name.c_str());
     arr->SetNumberOfComponents(1);
     arr->SetNumberOfTuples(static_cast<vtkIdType>(values.size()));
@@ -109,12 +109,12 @@ void CreateVTKUnstucturedGrid::addPointScalar(const std::string& name, const std
     m_grid->GetPointData()->AddArray(arr);
 }
 
-void CreateVTKUnstucturedGrid::addCellScalar(const std::string& name, const std::vector<double>& values)
+void CreateVTKUnstucturedGrid::addCellScalar(const std::string& name, const std::vector<float>& values)
 {
     if (values.size() != m_odb.m_elementsNum) {
         throw std::runtime_error("addCellScalar: size mismatch with element count");
     }
-    vtkSmartPointer<vtkDoubleArray> arr = vtkSmartPointer<vtkDoubleArray>::New();
+    vtkSmartPointer<vtkFloatArray> arr = vtkSmartPointer<vtkFloatArray>::New();
     arr->SetName(name.c_str());
     arr->SetNumberOfComponents(1);
     arr->SetNumberOfTuples(static_cast<vtkIdType>(values.size()));
@@ -155,7 +155,7 @@ bool CreateVTKUnstucturedGrid::writeToFile(const std::string& filename) const
     }
 }
 
-bool CreateVTKUnstucturedGrid::addFieldData(const FieldData& fieldData)
+bool CreateVTKUnstucturedGrid::addFieldData(FieldData& fieldData)
 {
     if (fieldData.type == FieldType::DISPLACEMENT || fieldData.type == FieldType::ROTATION) {
         // 节点数据
@@ -164,16 +164,17 @@ bool CreateVTKUnstucturedGrid::addFieldData(const FieldData& fieldData)
             return false;
         }
 
-        int numComponents = fieldData.componentLabels.size();
-        vtkSmartPointer<vtkDoubleArray> arr = vtkSmartPointer<vtkDoubleArray>::New();
+        int numComponents = fieldData.components;
+        vtkSmartPointer<vtkFloatArray> arr = vtkSmartPointer<vtkFloatArray>::New();
         arr->SetName(fieldData.name.c_str());
         arr->SetNumberOfComponents(numComponents);
-        arr->SetNumberOfTuples(static_cast<vtkIdType>(fieldData.nodeValues.size()));
+        arr->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_nodesNum));
 
-        for (std::size_t i = 0; i < fieldData.nodeValues.size(); ++i) {
+        for (std::size_t i = 0; i < m_odb.m_nodesNum; ++i) {
             if (fieldData.nodeValidFlags[i]) {
+                const std::size_t base = i * numComponents;
                 for (int comp = 0; comp < numComponents; ++comp) {
-                    arr->SetComponent(static_cast<vtkIdType>(i), comp, fieldData.nodeValues[i][comp]);
+                    arr->SetComponent(static_cast<vtkIdType>(i), comp, fieldData.nodeValues[base + comp]);
                 }
             }
             else {
@@ -194,16 +195,17 @@ bool CreateVTKUnstucturedGrid::addFieldData(const FieldData& fieldData)
             return false;
         }
 
-        int numComponents = fieldData.componentLabels.size();
-        vtkSmartPointer<vtkDoubleArray> arr = vtkSmartPointer<vtkDoubleArray>::New();
+        int numComponents = fieldData.components;
+        vtkSmartPointer<vtkFloatArray> arr = vtkSmartPointer<vtkFloatArray>::New();
         arr->SetName(fieldData.name.c_str());
         arr->SetNumberOfComponents(numComponents);
-        arr->SetNumberOfTuples(static_cast<vtkIdType>(fieldData.elementValues.size()));
+        arr->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_elementsNum));
 
-        for (std::size_t i = 0; i < fieldData.elementValues.size(); ++i) {
+        for (std::size_t i = 0; i < m_odb.m_elementsNum; ++i) {
             if (fieldData.elementValidFlags[i]) {
+                const std::size_t base = i * numComponents;
                 for (int comp = 0; comp < numComponents; ++comp) {
-                    arr->SetComponent(static_cast<vtkIdType>(i), comp, fieldData.elementValues[i][comp]);
+                    arr->SetComponent(static_cast<vtkIdType>(i), comp, fieldData.elementValues[base + comp]);
                 }
             }
             else {
@@ -218,11 +220,11 @@ bool CreateVTKUnstucturedGrid::addFieldData(const FieldData& fieldData)
     }
 
     std::cout << "[Info] Added field data: " << fieldData.name
-              << " with " << fieldData.componentLabels.size() << " components." << std::endl;
+              << " with " << fieldData.components << " components." << std::endl;
     return true;
 }
 
-bool CreateVTKUnstucturedGrid::addDisplacementField(const FieldData& displacementField, double scaleFactor)
+bool CreateVTKUnstucturedGrid::addDisplacementField(FieldData& displacementField, double scaleFactor)
 {
     if (displacementField.type != FieldType::DISPLACEMENT) {
         std::cerr << "[Error] Field is not a displacement field." << std::endl;
@@ -236,14 +238,18 @@ bool CreateVTKUnstucturedGrid::addDisplacementField(const FieldData& displacemen
 
     // 如果缩放因子不为0，应用位移到几何体
     if (scaleFactor != 0.0) {
-        applyDisplacement(displacementField.nodeValues, scaleFactor);
+        applyDisplacement(displacementField, scaleFactor);
         std::cout << "[Info] Applied displacement with scale factor: " << scaleFactor << std::endl;
     }
+
+    // 减少双驻留：位移场已推入 VTK，可丢弃缓存
+    std::vector<float>().swap(displacementField.nodeValues);
+    std::vector<uint8_t>().swap(displacementField.nodeValidFlags);
 
     return true;
 }
 
-bool CreateVTKUnstucturedGrid::addStressField(const FieldData& stressField, const std::string& component)
+bool CreateVTKUnstucturedGrid::addStressField(FieldData& stressField, const std::string& component)
 {
     if (stressField.type != FieldType::STRESS) {
         std::cerr << "[Error] Field is not a stress field." << std::endl;
@@ -262,15 +268,16 @@ bool CreateVTKUnstucturedGrid::addStressField(const FieldData& stressField, cons
         if (it != stressField.componentLabels.end()) {
             int compIndex = static_cast<int>(std::distance(stressField.componentLabels.begin(), it));
 
-            std::vector<double> componentValues;
-            componentValues.reserve(stressField.elementValues.size());
+            std::vector<float> componentValues;
+            componentValues.reserve(m_odb.m_elementsNum);
 
-            for (std::size_t i = 0; i < stressField.elementValues.size(); ++i) {
+            for (std::size_t i = 0; i < m_odb.m_elementsNum; ++i) {
                 if (stressField.elementValidFlags[i]) {
-                    componentValues.push_back(stressField.elementValues[i][compIndex]);
+                    const std::size_t base = i * stressField.components;
+                    componentValues.push_back(stressField.elementValues[base + compIndex]);
                 }
                 else {
-                    componentValues.push_back(0.0);
+                    componentValues.push_back(0.0f);
                 }
             }
 
@@ -282,42 +289,41 @@ bool CreateVTKUnstucturedGrid::addStressField(const FieldData& stressField, cons
     // 计算von Mises应力
     calculateVonMisesStress(stressField);
 
+    // 减少双驻留：应力场已推入 VTK，可丢弃缓存
+    std::vector<float>().swap(stressField.elementValues);
+    std::vector<uint8_t>().swap(stressField.elementValidFlags);
+
     return true;
 }
 
 void CreateVTKUnstucturedGrid::calculateVonMisesStress(const FieldData& stressField)
 {
-    if (stressField.componentLabels.size() < 6) {
+    if (stressField.components < 6) {
         std::cerr << "[Warning] Insufficient stress components for von Mises calculation." << std::endl;
         return;
     }
+    std::vector<float> vonMisesValues;
+    vonMisesValues.reserve(m_odb.m_elementsNum);
 
-    std::vector<double> vonMisesValues;
-    vonMisesValues.reserve(stressField.elementValues.size());
-
-    for (std::size_t i = 0; i < stressField.elementValues.size(); ++i) {
+    for (std::size_t i = 0; i < m_odb.m_elementsNum; ++i) {
         if (stressField.elementValidFlags[i]) {
-            const auto& stress = stressField.elementValues[i];
+            const std::size_t base = i * stressField.components;
+            const double s11 = stressField.elementValues[base + 0];
+            const double s22 = stressField.elementValues[base + 1];
+            const double s33 = stressField.elementValues[base + 2];
+            const double s12 = stressField.elementValues[base + 3];
+            const double s13 = stressField.elementValues[base + 4];
+            const double s23 = stressField.elementValues[base + 5];
 
-            // von Mises应力计算: sqrt(0.5 * ((s11-s22)^2 + (s22-s33)^2 + (s33-s11)^2 + 6*(s12^2 + s23^2 + s13^2)))
-            double s11 = stress[0]; // S11
-            double s22 = stress[1]; // S22
-            double s33 = stress[2]; // S33
-            double s12 = stress[3]; // S12
-            double s13 = stress[4]; // S13
-            double s23 = stress[5]; // S23
-
-            double vonMises = std::sqrt(0.5 * (
+            const double vm = std::sqrt(0.5 * (
                                             std::pow(s11 - s22, 2) +
                                             std::pow(s22 - s33, 2) +
                                             std::pow(s33 - s11, 2) +
                                             6.0 * (std::pow(s12, 2) + std::pow(s23, 2) + std::pow(s13, 2))
                                             ));
-
-            vonMisesValues.push_back(vonMises);
-        }
-        else {
-            vonMisesValues.push_back(0.0);
+            vonMisesValues.push_back(static_cast<float>(vm));
+        } else {
+            vonMisesValues.push_back(0.0f);
         }
     }
 
@@ -325,7 +331,7 @@ void CreateVTKUnstucturedGrid::calculateVonMisesStress(const FieldData& stressFi
     std::cout << "[Info] Calculated von Mises stress." << std::endl;
 }
 
-void CreateVTKUnstucturedGrid::applyDisplacement(const std::vector<std::vector<double>>& displacements, double scaleFactor)
+void CreateVTKUnstucturedGrid::applyDisplacement(const FieldData& displacementField, double scaleFactor)
 {
     vtkPoints* points = m_grid->GetPoints();
     if (!points) {
@@ -334,8 +340,8 @@ void CreateVTKUnstucturedGrid::applyDisplacement(const std::vector<std::vector<d
     }
 
     vtkIdType numPoints = points->GetNumberOfPoints();
-    if (static_cast<std::size_t>(numPoints) != displacements.size()) {
-        std::cerr << "[Error] Displacement size mismatch with point count." << std::endl;
+    if (displacementField.components <= 0) {
+        std::cerr << "[Error] Displacement components invalid." << std::endl;
         return;
     }
 
@@ -343,16 +349,14 @@ void CreateVTKUnstucturedGrid::applyDisplacement(const std::vector<std::vector<d
         double point[3];
         points->GetPoint(i, point);
 
-        // 应用位移
-        if (displacements[i].size() >= 3) {
-            point[0] += displacements[i][0] * scaleFactor;
-            point[1] += displacements[i][1] * scaleFactor;
-            point[2] += displacements[i][2] * scaleFactor;
-        }
-        else if (displacements[i].size() >= 2) {
-            // 2D情况
-            point[0] += displacements[i][0] * scaleFactor;
-            point[1] += displacements[i][1] * scaleFactor;
+        const std::size_t base = static_cast<std::size_t>(i) * displacementField.components;
+        if (displacementField.components >= 3) {
+            point[0] += static_cast<double>(displacementField.nodeValues[base + 0]) * scaleFactor;
+            point[1] += static_cast<double>(displacementField.nodeValues[base + 1]) * scaleFactor;
+            point[2] += static_cast<double>(displacementField.nodeValues[base + 2]) * scaleFactor;
+        } else if (displacementField.components >= 2) {
+            point[0] += static_cast<double>(displacementField.nodeValues[base + 0]) * scaleFactor;
+            point[1] += static_cast<double>(displacementField.nodeValues[base + 1]) * scaleFactor;
         }
 
         points->SetPoint(i, point);

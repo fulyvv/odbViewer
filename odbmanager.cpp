@@ -9,7 +9,6 @@ readOdb::readOdb(const char* odbFullname)
     m_odbBaseName = m_odbFullName.substr(m_odbFullName.find_last_of("/\\") + 1);
     //m_odb = &openOdb(odbFile);
     m_odb = &openOdb(odbFile.CStr(), /*readOnly*/ true);
-    // readModelInfo();
     readStepFrameInfo();
     constructMap();
 }
@@ -262,6 +261,7 @@ void readOdb::readDisplacementField(const odb_FieldOutput& fieldOutput)
     for (int i = 0; i < componentLabels.size(); ++i) {
         fieldData.componentLabels.push_back(componentLabels[i].cStr());
     }
+    fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
 
     // 提取场值
     extractFieldValues2(fieldOutput, fieldData);
@@ -269,8 +269,8 @@ void readOdb::readDisplacementField(const odb_FieldOutput& fieldOutput)
     // 存储到map中
     m_fieldDataMap["U"] = fieldData;
 
-    std::cout << "[Info] Read displacement field with " << fieldData.nodeValues.size()
-              << " nodes, " << fieldData.componentLabels.size() << " components." << std::endl;
+    std::cout << "[Info] Read displacement field with " << m_nodesNum
+              << " nodes, " << fieldData.components << " components." << std::endl;
 }
 
 void readOdb::readRotationField(const odb_FieldOutput& fieldOutput)
@@ -285,6 +285,7 @@ void readOdb::readRotationField(const odb_FieldOutput& fieldOutput)
     for (int i = 0; i < componentLabels.size(); ++i) {
         fieldData.componentLabels.push_back(componentLabels[i].cStr());
     }
+    fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
 
     // 提取场值
     extractFieldValues2(fieldOutput, fieldData);
@@ -292,8 +293,8 @@ void readOdb::readRotationField(const odb_FieldOutput& fieldOutput)
     // 存储到map中
     m_fieldDataMap["UR"] = fieldData;
 
-    std::cout << "[Info] Read rotation field with " << fieldData.nodeValues.size()
-              << " nodes, " << fieldData.componentLabels.size() << " components." << std::endl;
+    std::cout << "[Info] Read rotation field with " << m_nodesNum
+              << " nodes, " << fieldData.components << " components." << std::endl;
 }
 
 void readOdb::readStressField(const odb_FieldOutput& fieldOutput)
@@ -308,6 +309,7 @@ void readOdb::readStressField(const odb_FieldOutput& fieldOutput)
     for (int i = 0; i < componentLabels.size(); ++i) {
         fieldData.componentLabels.push_back(componentLabels[i].cStr());
     }
+    fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
 
     // 提取场值
     extractFieldValues2(fieldOutput, fieldData);
@@ -315,8 +317,8 @@ void readOdb::readStressField(const odb_FieldOutput& fieldOutput)
     // 存储到map中
     m_fieldDataMap["S"] = fieldData;
 
-    std::cout << "[Info] Read stress field with " << fieldData.elementValues.size()
-              << " elements, " << fieldData.componentLabels.size() << " components." << std::endl;
+    std::cout << "[Info] Read stress field with " << m_elementsNum
+              << " elements, " << fieldData.components << " components." << std::endl;
 }
 
 void readOdb::extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData& fieldData)
@@ -328,90 +330,69 @@ void readOdb::extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData&
 
         // 获取组件数量
         int numComponents = fieldOutput.componentLabels().size();
+        fieldData.components = numComponents;
 
         // 根据场输出位置确定是节点数据还是单元数据
         odb_Enum::odb_ResultPositionEnum position = fieldOutput.locations()[0].position();
         bool isNodalData = (position == odb_Enum::NODAL);
 
         if (isNodalData) {
-            // 节点数据处理
-            fieldData.nodeValues.resize(m_nodesNum, std::vector<double>(numComponents, 0.0));
-            fieldData.nodeValidFlags.resize(m_nodesNum, false);
+            // 节点数据处理（扁平化 + float + uint8_t）
+            fieldData.nodeValues.assign(m_nodesNum * numComponents, 0.0f);
+            fieldData.nodeValidFlags.assign(m_nodesNum, 0);
 
-            // 遍历所有bulk data blocks
             for (int iblock = 0; iblock < numBlocks; iblock++) {
                 const odb_FieldBulkData& bulkData = bulkDataBlocks[iblock];
-
                 int numNodes = bulkData.length();        // 节点数量
                 int numComp = bulkData.width();          // 组件数量
                 float* data = bulkData.data();           // 数据数组
                 int* nodeLabels = bulkData.nodeLabels(); // 节点标签数组
 
-                // 遍历当前block中的所有节点
-                for (int node = 0, pos = 0; node < numNodes; node++) {
+                int pos = 0;
+                for (int node = 0; node < numNodes; node++) {
                     int nodeLabel = nodeLabels[node];
-
-                    // 映射到全局索引
                     std::size_t globalIdx = mapFieldDataToGlobalIndices(nodeLabel, true);
                     if (globalIdx < m_nodesNum) {
-                        // 复制数据到fieldData
+                        const std::size_t base = globalIdx * numComponents;
                         for (int comp = 0; comp < numComp; comp++) {
-                            fieldData.nodeValues[globalIdx][comp] = static_cast<double>(data[pos++]);
+                            fieldData.nodeValues[base + comp] = data[pos++];
                         }
-                        fieldData.nodeValidFlags[globalIdx] = true;
-                    }
-                    else {
-                        // 跳过无效节点的数据
-                        pos += numComp;
+                        fieldData.nodeValidFlags[globalIdx] = 1;
+                    } else {
+                        pos += numComp; // 跳过无效节点的数据
                     }
                 }
             }
-        }
-        else {
-            // 单元数据处理
-            fieldData.elementValues.resize(m_elementsNum, std::vector<double>(numComponents, 0.0));
-            fieldData.elementValidFlags.resize(m_elementsNum, false);
+        } else {
+            // 单元数据处理（扁平化 + float + uint8_t）
+            fieldData.elementValues.assign(m_elementsNum * numComponents, 0.0f);
+            fieldData.elementValidFlags.assign(m_elementsNum, 0);
 
-            // 遍历所有bulk data blocks
             for (int jblock = 0; jblock < numBlocks; jblock++) {
                 const odb_FieldBulkData& bulkData = bulkDataBlocks[jblock];
-
                 int numValues = bulkData.length();           // 总输出位置数
                 int numComp = bulkData.width();              // 组件数量
                 float* data = bulkData.data();               // 数据数组
                 int nElems = bulkData.numberOfElements();    // 单元数量
                 int* elementLabels = bulkData.elementLabels(); // 单元标签数组
 
-                // 计算每个单元的积分点数量
-                int numIP = (nElems > 0) ? numValues / nElems : 1;
+                int numIP = (nElems > 0) ? numValues / nElems : 1; // 每单元积分点数
+                int dataPosition = 0;
+                // 尝试获取积分点信息（可选，不使用）
+                try { (void)bulkData.integrationPoints(); } catch (...) {}
 
-                // 如果有积分点信息
-                int* integrationPoints = nullptr;
-                try {
-                    integrationPoints = bulkData.integrationPoints();
-                }
-                catch (...) {
-                    // 某些情况下可能没有积分点信息
-                }
-
-                // 遍历当前block中的所有单元
-                for (int elem = 0, dataPosition = 0; elem < nElems; elem++) {
+                for (int elem = 0; elem < nElems; elem++) {
                     int elementLabel = elementLabels[elem];
-
-                    // 映射到全局索引
                     std::size_t globalIdx = mapFieldDataToGlobalIndices(elementLabel, false);
-
                     if (globalIdx < m_elementsNum) {
-                        // 对于单元数据，通常取第一个积分点的值或者平均值
-                        // 这里我们取第一个积分点的值
+                        const std::size_t base = globalIdx * numComponents;
+                        // 取第一个积分点的值
                         for (int comp = 0; comp < numComp; comp++) {
-                            fieldData.elementValues[globalIdx][comp] = static_cast<double>(data[dataPosition + comp]);
+                            fieldData.elementValues[base + comp] = data[dataPosition + comp];
                         }
-                        fieldData.elementValidFlags[globalIdx] = true;
+                        fieldData.elementValidFlags[globalIdx] = 1;
                     }
-
-                    // 跳过当前单元的所有积分点数据
-                    dataPosition += numIP * numComp;
+                    dataPosition += numIP * numComp; // 跳过该单元其他积分点
                 }
             }
         }
@@ -470,9 +451,19 @@ StepFrameInfo readOdb::getCurrentStepFrame() const
     return m_currentStepFrame;
 }
 
+OdbManager::OdbManager() {}
 const std::string& readOdb::getOdbPath() const { return m_odbPath; }
 const std::string& readOdb::getOdbBaseName() const { return m_odbBaseName; }
 const std::string& readOdb::getOdbFullName() const { return m_odbFullName; }
+
+void readOdb::releaseGeometryCache()
+{
+    // 清空几何大块数据，保留轻量索引映射以支持场映射
+    std::vector<nodeCoord>().swap(m_nodesCoord);
+    std::vector<std::vector<std::size_t>>().swap(m_elementsConn);
+    std::vector<std::string>().swap(m_elementTypes);
+    std::cout << "[Info] Released geometry caches: nodesCoord, elementsConn, elementTypes." << std::endl;
+}
 
 // 轻探测：列出某帧可用场变量及其分量标签（不读取 bulkData）
 std::vector<std::pair<std::string, std::vector<std::string>>>
@@ -539,6 +530,3 @@ readOdb::listFieldNames(const std::string& stepName, int frameIndex) const
 
     return result;
 }
-
-
-OdbManager::OdbManager() {}
