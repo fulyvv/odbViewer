@@ -79,6 +79,9 @@ public:
     bool hasFieldData(const std::string& fieldName) const;
     StepFrameInfo getCurrentStepFrame() const;
 
+    // 轻探测：列出某帧可用场变量及其分量标签（不读取 bulkData）
+    std::vector<std::pair<std::string, std::vector<std::string>>> listFieldNames(const std::string& stepName, int frameIndex) const;
+
     // 公开的文件路径/名称访问器
     const std::string& getOdbPath() const;
     const std::string& getOdbBaseName() const;

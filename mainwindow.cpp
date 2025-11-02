@@ -64,32 +64,7 @@ void MainWindow::openFile() {
         m_vtkDisplay.addAxes();
         m_vtkDisplay.getRenderWindow()->Render();
 
-        // 读取首帧的场变量（用于测试显示 U）
         const auto frames = m_odb->getAvailableStepsFrames();
-        if (!frames.empty()) {
-            const auto& sf = frames.front();
-            if (m_odb->readFieldOutput(sf.stepName, sf.frameIndex) && m_odb->hasFieldData("U")) {
-                const FieldData* uData = m_odb->getFieldData("U");
-                if (uData) {
-                    // 计算位移模长 U.Magnitude 并作为点标量添加
-                    std::vector<double> uMag(m_odb->m_nodesNum, 0.0);
-                    for (std::size_t i = 0; i < m_odb->m_nodesNum; ++i) {
-                        if (i < uData->nodeValues.size() && uData->nodeValidFlags[i]) {
-                            const auto& v = uData->nodeValues[i];
-                            const double u1 = v.size() > 0 ? v[0] : 0.0;
-                            const double u2 = v.size() > 1 ? v[1] : 0.0;
-                            const double u3 = v.size() > 2 ? v[2] : 0.0;
-                            uMag[i] = std::sqrt(u1 * u1 + u2 * u2 + u3 * u3);
-                        } else {
-                            uMag[i] = 0.0;
-                        }
-                    }
-                    grid.addPointScalar("U.Magnitude", uMag);
-                    // 激活标量显示（点数据）
-                    m_vtkDisplay.setActiveScalar(grid.getGrid(), "U.Magnitude", /*usePointData*/ true);
-                }
-            }
-        }
 
 
 		ui->statusBar->showMessage(tr("Successfully opened ODB file: %1").arg(fileName), 5000);
@@ -147,22 +122,21 @@ void MainWindow::buildModelTree()
         }
     }
 
-    // 3) 可用场变量（取第一帧快速探测）
+    // 3) 可用场变量（轻探测：不读取 bulkData）
     if (!frames.empty()) {
         const auto& first = frames.front();
-        if (m_odb->readFieldOutput(first.stepName, first.frameIndex)) {
-            // m_fieldDataMap 的 key 为字段名，例如 "U"、"UR"、"S"
-            for (const auto& kv : m_odb->m_fieldDataMap) {
+        auto fieldInfos = m_odb->listFieldNames(first.stepName, first.frameIndex);
+        if (!fieldInfos.empty()) {
+            for (const auto& kv : fieldInfos) {
                 const QString fieldName = QString::fromStdString(kv.first);
                 QStandardItem* fieldItem = new QStandardItem(fieldName);
                 fieldsRoot->appendRow(fieldItem);
-                // 展示分量标签
-                for (const auto& compLabel : kv.second.componentLabels) {
+                for (const auto& compLabel : kv.second) {
                     fieldItem->appendRow(new QStandardItem(QString::fromStdString(compLabel)));
                 }
             }
         } else {
-            fieldsRoot->appendRow(new QStandardItem(tr("未能读取第一帧的场变量")));
+            fieldsRoot->appendRow(new QStandardItem(tr("未发现场变量")));
         }
     } else {
         fieldsRoot->appendRow(new QStandardItem(tr("无可用帧")));

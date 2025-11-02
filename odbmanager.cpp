@@ -9,7 +9,7 @@ readOdb::readOdb(const char* odbFullname)
     m_odbBaseName = m_odbFullName.substr(m_odbFullName.find_last_of("/\\") + 1);
     //m_odb = &openOdb(odbFile);
     m_odb = &openOdb(odbFile.CStr(), /*readOnly*/ true);
-    readModelInfo();
+    // readModelInfo();
     readStepFrameInfo();
     constructMap();
 }
@@ -92,66 +92,70 @@ void readOdb::readModelInfo()
 
 void readOdb::constructMap()
 {
-    m_nodesCoord.clear();
-    m_nodesCoord.resize(m_nodesNum);
-    m_nodeLocalToGlobalMap.clear();
+    // 合并：一次遍历装配中的实例，同时统计总数、建立局部→全局映射、填充坐标与连通性
 
+    // 清理旧数据
+    m_nodesCoord.clear();
     m_elementsConn.clear();
-    m_elementsConn.resize(m_elementsNum);
-    m_elementLocalToGlobalMap.clear();
     m_elementTypes.clear();
-    m_elementTypes.resize(m_elementsNum);
+    m_nodeLocalToGlobalMap.clear();
+    m_elementLocalToGlobalMap.clear();
+    m_instanceNames.clear();
 
     std::size_t nodeGlobalIndex = 0;
     std::size_t elementGlobalIndex = 0;
 
-    for (const auto& inst_name : m_instanceNames) {
-        // 预先获取实例的引用，避免重复查找
-        auto rootAssy = m_odb->rootAssembly();
-        auto inst = rootAssy.instances()[inst_name.c_str()];
+    odb_Assembly& rootAssy = m_odb->rootAssembly();
+    odb_InstanceRepositoryIT instIter(rootAssy.instances());
+    for (instIter.first(); !instIter.isDone(); instIter.next()) {
+        const std::string inst_name = instIter.currentKey().CStr();
+        const odb_Instance& inst = instIter.currentValue();
+        m_instanceNames.emplace_back(inst_name);
+
         auto node_list = inst.nodes();
         auto element_list = inst.elements();
 
-        // 为当前实例创建局部映射表
         auto& nodeLocalToGlobal = m_nodeLocalToGlobalMap[inst_name];
         auto& elementLocalToGlobal = m_elementLocalToGlobalMap[inst_name];
-        // 预分配空间以提高性能
         nodeLocalToGlobal.reserve(node_list.size());
         elementLocalToGlobal.reserve(element_list.size());
 
-        // 第一遍：处理节点，构建节点映射
-        for (int i = 0; i < node_list.size(); i++) {
+        // 节点：建立映射并填充坐标（push_back 连续内存）
+        for (int i = 0; i < node_list.size(); ++i) {
             auto node = node_list[i];
             nodeLocalToGlobal[node.label()] = nodeGlobalIndex;
             const float* const coord = node.coordinates();
-            m_nodesCoord[nodeGlobalIndex] = nodeCoord(coord[0], coord[1], coord[2]);
-            nodeGlobalIndex++;
+            m_nodesCoord.emplace_back(coord[0], coord[1], coord[2]);
+            ++nodeGlobalIndex;
         }
 
-        // 第二遍：处理单元，使用已构建的节点映射
-        for (int i = 0; i < element_list.size(); i++) {
+        // 单元：建立映射并填充连通性与类型（使用已构建的节点映射）
+        for (int i = 0; i < element_list.size(); ++i) {
             auto element = element_list[i];
             elementLocalToGlobal[element.label()] = elementGlobalIndex;
 
             int nNodes = 0;
             const int* const conn = element.connectivity(nNodes);
-            m_elementsConn[elementGlobalIndex].resize(nNodes);
-
-            // 优化：减少哈希表查找次数
-            for (int j = 0; j < nNodes; j++) {
+            std::vector<std::size_t> globalConn;
+            globalConn.resize(nNodes);
+            for (int j = 0; j < nNodes; ++j) {
                 auto it = nodeLocalToGlobal.find(conn[j]);
                 if (it != nodeLocalToGlobal.end()) {
-                    m_elementsConn[elementGlobalIndex][j] = it->second;
-                }
-                else {
+                    globalConn[j] = it->second;
+                } else {
                     std::cerr << "[Error] Node label " << conn[j] << " not found in instance " << inst_name << std::endl;
-                    m_elementsConn[elementGlobalIndex][j] = 0; // 使用默认值
+                    globalConn[j] = 0; // 使用默认值
                 }
             }
-            m_elementTypes[elementGlobalIndex] = element.type().CStr();
-            elementGlobalIndex++;
+            m_elementsConn.emplace_back(std::move(globalConn));
+            m_elementTypes.emplace_back(element.type().CStr());
+            ++elementGlobalIndex;
         }
     }
+
+    // 更新总数
+    m_nodesNum = nodeGlobalIndex;
+    m_elementsNum = elementGlobalIndex;
 }
 
 //读取所有可用的step和frame信息
@@ -469,5 +473,72 @@ StepFrameInfo readOdb::getCurrentStepFrame() const
 const std::string& readOdb::getOdbPath() const { return m_odbPath; }
 const std::string& readOdb::getOdbBaseName() const { return m_odbBaseName; }
 const std::string& readOdb::getOdbFullName() const { return m_odbFullName; }
+
+// 轻探测：列出某帧可用场变量及其分量标签（不读取 bulkData）
+std::vector<std::pair<std::string, std::vector<std::string>>>
+readOdb::listFieldNames(const std::string& stepName, int frameIndex) const
+{
+    std::vector<std::pair<std::string, std::vector<std::string>>> result;
+
+    const odb_String& stepNameOdbStr = odb_String(stepName.c_str());
+    const odb_StepRepository& steps = m_odb->steps();
+    if (!steps.isMember(stepNameOdbStr)) {
+        std::cerr << "[Error] Step '" << stepName << "' not found." << std::endl;
+        return result;
+    }
+
+    const odb_Step& step = steps.constGet(stepNameOdbStr);
+    const odb_SequenceFrame& allFramesInStep = step.frames();
+
+    const odb_Frame* targetFrame = nullptr;
+    for (int i = 0; i < allFramesInStep.size(); ++i) {
+        const odb_Frame& frame = allFramesInStep[i];
+        if (frame.frameId() == frameIndex) {
+            targetFrame = &frame;
+            break;
+        }
+    }
+    if (!targetFrame) {
+        std::cerr << "[Error] Frame " << frameIndex << " not found in step '" << stepName << "'." << std::endl;
+        return result;
+    }
+
+    const odb_FieldOutputRepository& fieldOutputs = targetFrame->fieldOutputs();
+    try {
+        // 迭代仓库键值以获取所有场及其分量标签
+        odb_FieldOutputRepositoryIT foIter(fieldOutputs);
+        for (foIter.first(); !foIter.isDone(); foIter.next()) {
+            std::string fname = foIter.currentKey().CStr();
+            const odb_FieldOutput& fo = foIter.currentValue();
+            std::vector<std::string> comps;
+            const odb_SequenceString& componentLabels = fo.componentLabels();
+            for (int c = 0; c < componentLabels.size(); ++c) {
+                comps.emplace_back(componentLabels[c].cStr());
+            }
+            result.emplace_back(std::move(fname), std::move(comps));
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Error] Failed to list field names: " << e.what() << std::endl;
+    }
+
+    // 若迭代方式不可用或无结果，回退到常用字段探测
+    if (result.empty()) {
+        const char* commonFields[] = {"U", "UR", "S"};
+        for (const char* name : commonFields) {
+            if (fieldOutputs.isMember(name)) {
+                const odb_FieldOutput& fo = fieldOutputs[name];
+                std::vector<std::string> comps;
+                const odb_SequenceString& componentLabels = fo.componentLabels();
+                for (int c = 0; c < componentLabels.size(); ++c) {
+                    comps.emplace_back(componentLabels[c].cStr());
+                }
+                result.emplace_back(std::string(name), std::move(comps));
+            }
+        }
+    }
+
+    return result;
+}
+
 
 OdbManager::OdbManager() {}
