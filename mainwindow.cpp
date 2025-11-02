@@ -34,7 +34,6 @@ MainWindow::MainWindow(QWidget *parent)
     m_treeModel->setColumnCount(1);
     m_treeModel->setHorizontalHeaderLabels({tr("模型")});
     ui->treeView->setModel(m_treeModel);
-
 }
 
 MainWindow::~MainWindow()

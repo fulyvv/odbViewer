@@ -6,7 +6,6 @@
 #include <string>
 #include <vector>
 #include <iostream>
-
 #include <odb_API.h>
 
 #include "global.h"
@@ -34,46 +33,34 @@ struct StepFrameInfo {
         : stepName(name), frameIndex(frame), frameValue(value), description(desc) {
     }
 };
-// 场变量数据结构（内存优化：连续float存储 + uint8_t有效标记）
+
 struct FieldData {
     FieldType type;
-    std::string name;           // 场变量名称 (U, UR, S)
-    std::string description;    // 描述信息
-    std::vector<std::string> componentLabels;  // 分量名称 (U1,U2,U3 或 S11,S22,S33,S12,S13,S23)
-    int components{0};          // 分量数量
+    std::string name;
+    std::string description;  
+    // 分量名称 (U1,U2,U3 或 S11,S22,S33,S12,S13,S23)
+    std::vector<std::string> componentLabels;
+    int components{0};// 分量数量
 
-    // 节点数据 (位移、旋转) — 扁平化：size = m_nodesNum * components
-    std::vector<float> nodeValues;      // 连续内存 [nodeIndex * components + c]
-    std::vector<uint8_t> nodeValidFlags;// [nodeIndex] 节点数据有效性标志 (0/1)
+    // 节点数据 (位移、旋转) size = m_nodesNum * components
+    std::vector<float> nodeValues;      //[nodeIndex * components + c]
+    std::vector<uint8_t> nodeValidFlags;//有效性标志 (0/1)
 
-    // 单元数据 (应力) — 扁平化：size = m_elementsNum * components
-    std::vector<float> elementValues;   // 连续内存 [elementIndex * components + c]
-    std::vector<uint8_t> elementValidFlags; // [elementIndex] 单元数据有效性标志 (0/1)
-
-    // 元数据
-    std::string unit;          // 单位mm或者MPa
+    // 单元数据 (应力) size = m_elementsNum * components
+    std::vector<float> elementValues;   //[elementIndex * components + c]
+    std::vector<uint8_t> elementValidFlags;
+    std::string unit;// 单位mm或者MPa
 
     FieldData() : type(FieldType::DISPLACEMENT) {}
 };
 
-//从odb读取数据
+
 class readOdb
 {
 public:
     readOdb(const char* odbFullname);
     ~readOdb();
 
-    nodeCoord getNodeCoordNodeLabel(const std::string& inst_name, int nodeLabel);
-
-    nodeCoord getNodeCoordNodeLabel(std::size_t nodeLabel) const;
-
-    nodeCoord getNodeCoordGlobal(std::size_t globaIdx) const;
-
-    std::vector<std::size_t> getEelementConnElementLabel(std::string inst_name, int elementLabel);
-
-    std::vector<std::size_t> getEelementConnElementLabel(std::size_t elementLabel) const;
-
-    std::vector<std::size_t> getEelementConnGlobal(std::size_t globalIdx) const;
 
     bool readFieldOutput(const std::string& stepName, int frameIndex);
     // 按需字段读取：仅读取某一场变量（U/UR/S或其他），避免三倍数据驻留
@@ -99,8 +86,6 @@ public:
 private:
     readOdb(const readOdb&) = delete;
     readOdb& operator=(const readOdb&) = delete;
-
-    void readModelInfo();
     void constructMap();
 
     void readStepFrameInfo();
@@ -150,12 +135,6 @@ public:
 
     // 状态标志
     bool m_hasFieldData = false;
-};
-
-class OdbManager
-{
-public:
-    OdbManager();
 };
 
 #endif // ODBMANAGER_H

@@ -1,4 +1,4 @@
-#include "vtkDisplay.h"
+#include "vtkdisplay.h"
 #include <vtkArrayCalculator.h>
 #include <vtkDataSet.h>
 
@@ -8,10 +8,7 @@ VTKDisplayManager::VTKDisplayManager()
     renderer = vtkSmartPointer<vtkRenderer>::New();
     renderWindow = vtkSmartPointer<vtkGenericOpenGLRenderWindow>::New();
 
-    // 设置窗口
     renderWindow->AddRenderer(renderer);
-
-    // 设置背景色
     renderer->SetBackground(0.1, 0.2, 0.3); // 深蓝色背景
 
     // 显示对象延迟创建以便按需复用

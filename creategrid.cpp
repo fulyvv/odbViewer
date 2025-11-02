@@ -3,6 +3,7 @@
 #include <vtkIdTypeArray.h>
 #include <vtkFloatArray.h>
 #include <vtkCellType.h>
+#include <unordered_map>
 
 CreateVTKUnstucturedGrid::CreateVTKUnstucturedGrid(const readOdb& odb)
     : m_odb(odb)
@@ -34,7 +35,6 @@ void CreateVTKUnstucturedGrid::buildGeometry()
 
     vtkSmartPointer<vtkIdTypeArray> offsets = vtkSmartPointer<vtkIdTypeArray>::New();
     offsets->SetNumberOfComponents(1);
-    // offsets->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_elementsNum));
     offsets->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_elementsNum + 1));
 
     // 预先统计连通性总长度以优化分配

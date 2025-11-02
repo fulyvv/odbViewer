@@ -7,7 +7,6 @@ readOdb::readOdb(const char* odbFullname)
     m_odbFullName = std::string(odbFullname);
     m_odbPath = m_odbFullName.substr(0, m_odbFullName.find_last_of("/\\"));
     m_odbBaseName = m_odbFullName.substr(m_odbFullName.find_last_of("/\\") + 1);
-    //m_odb = &openOdb(odbFile);
     m_odb = &openOdb(odbFile.CStr(), /*readOnly*/ true);
     readStepFrameInfo();
     constructMap();
@@ -19,75 +18,6 @@ readOdb::~readOdb()
 }
 
 
-nodeCoord readOdb::getNodeCoordNodeLabel(const std::string& inst_name, int nodeLabel)
-{
-    std::size_t globalIdx = m_nodeLocalToGlobalMap[inst_name][nodeLabel];
-    return m_nodesCoord[globalIdx];
-}
-
-nodeCoord readOdb::getNodeCoordNodeLabel(std::size_t nodeLabel) const
-{
-    for (const auto& [inst, umap] : m_nodeLocalToGlobalMap) {
-        auto it = umap.find(nodeLabel);
-        if (it != umap.end()) {
-            return m_nodesCoord[it->second];
-        }
-    }
-    // 如果找不到节点，抛出异常或返回默认值
-    std::cerr << "[Warning] Node with label " << nodeLabel << " not found. Returning default coordinates (0,0,0)." << std::endl;
-    return nodeCoord(0.0, 0.0, 0.0);
-}
-
-nodeCoord readOdb::getNodeCoordGlobal(std::size_t globaIdx) const
-{
-    return this->m_nodesCoord[globaIdx];
-}
-
-std::vector<std::size_t> readOdb::getEelementConnElementLabel(std::string inst_name, int elementLabel)
-{
-    int globalIdx = m_elementLocalToGlobalMap[inst_name][elementLabel];
-    return m_elementsConn[globalIdx];
-}
-
-std::vector<std::size_t> readOdb::getEelementConnElementLabel(std::size_t elementLabel) const
-{
-    for (const auto& [inst, umap] : m_elementLocalToGlobalMap) {
-        auto it = umap.find(elementLabel);
-        if (it != umap.end()) {
-            return m_elementsConn[it->second];
-        }
-    }
-    // 如果找不到单元，返回空vector并输出警告
-    std::cerr << "[Warning] Element with label " << elementLabel << " not found. Returning empty connectivity." << std::endl;
-    return std::vector<std::size_t>();
-}
-
-std::vector<std::size_t> readOdb::getEelementConnGlobal(std::size_t globalIdx) const
-{
-    return m_elementsConn[globalIdx];
-}
-
-//读取模型的instances steps frames
-//读取节点和单元总数
-void readOdb::readModelInfo()
-{
-    //读取instance
-    m_nodesNum = 0;
-    m_elementsNum = 0;
-    odb_Assembly& rootAssy = m_odb->rootAssembly();
-    odb_InstanceRepositoryIT instIter(rootAssy.instances());
-    for (instIter.first(); !instIter.isDone(); instIter.next()) {
-        m_instanceNames.emplace_back(instIter.currentKey().CStr());
-        auto& curInst = instIter.currentValue(); //获取当前实例
-        auto nodeSize = curInst.nodes().size();
-        m_nodesNum += nodeSize;
-        auto elementSize = curInst.elements().size();
-        m_elementsNum += elementSize;
-    }
-
-    //TODO : 获取step和frame的信息，后续读取场输出有用
-
-}
 
 void readOdb::constructMap()
 {
@@ -558,7 +488,6 @@ StepFrameInfo readOdb::getCurrentStepFrame() const
     return m_currentStepFrame;
 }
 
-OdbManager::OdbManager() {}
 const std::string& readOdb::getOdbPath() const { return m_odbPath; }
 const std::string& readOdb::getOdbBaseName() const { return m_odbBaseName; }
 const std::string& readOdb::getOdbFullName() const { return m_odbFullName; }
