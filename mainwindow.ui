@@ -11,7 +11,11 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>ODBViewer</string>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="toolicons.qrc">
+    <normaloff>:/icons/odbviewer.ico</normaloff>:/icons/odbviewer.ico</iconset>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout">
@@ -126,7 +130,7 @@
      <normaloff>:/icons/open.ico</normaloff>:/icons/open.ico</iconset>
    </property>
    <property name="text">
-    <string>open</string>
+    <string>Open</string>
    </property>
    <property name="toolTip">
     <string>打开文件</string>
@@ -141,13 +145,17 @@
      <normaloff>:/icons/save.ico</normaloff>:/icons/save.ico</iconset>
    </property>
    <property name="text">
-    <string>save</string>
+    <string>Save</string>
    </property>
    <property name="toolTip">
     <string>保存文件</string>
    </property>
   </action>
   <action name="actionAbout">
+   <property name="icon">
+    <iconset resource="toolicons.qrc">
+     <normaloff>:/icons/about.ico</normaloff>:/icons/about.ico</iconset>
+   </property>
    <property name="text">
     <string>About</string>
    </property>

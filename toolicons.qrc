@@ -1,6 +1,8 @@
 <RCC>
     <qresource prefix="/">
-        <file>icons/open.ico</file>
         <file>icons/save.ico</file>
+        <file>icons/odbviewer.ico</file>
+        <file>icons/open.ico</file>
+        <file>icons/about.ico</file>
     </qresource>
 </RCC>
