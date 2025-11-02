@@ -1,4 +1,6 @@
 #include "vtkDisplay.h"
+#include <vtkArrayCalculator.h>
+#include <vtkDataSet.h>
 
 VTKDisplayManager::VTKDisplayManager()
 {
@@ -271,5 +273,47 @@ bool VTKDisplayManager::setActiveScalar(vtkUnstructuredGrid* grid, const std::st
               << ", Actors2D: " << renderer->GetActors2D()->GetNumberOfItems()
               << std::endl;
 
+    return true;
+}
+
+bool VTKDisplayManager::addPointVectorMagnitude(vtkUnstructuredGrid* grid, const std::string& vectorName, const std::string& outputName)
+{
+    if (!grid) {
+        std::cerr << "[Error] addPointVectorMagnitude: grid 为空" << std::endl;
+        return false;
+    }
+    if (!grid->GetPointData()) {
+        std::cerr << "[Error] addPointVectorMagnitude: grid 无点数据" << std::endl;
+        return false;
+    }
+    vtkDataArray* vec = grid->GetPointData()->GetArray(vectorName.c_str());
+    if (!vec) {
+        std::cerr << "[Error] addPointVectorMagnitude: 未找到点矢量数组 " << vectorName << std::endl;
+        return false;
+    }
+    vtkNew<vtkArrayCalculator> calc;
+    calc->SetInputData(grid);
+    calc->SetAttributeTypeToPointData();
+    calc->AddVectorArrayName(vectorName.c_str());
+    const std::string expr = std::string("mag(") + vectorName + ")";
+    calc->SetFunction(expr.c_str());
+    calc->SetResultArrayName(outputName.c_str());
+    calc->Update();
+
+    vtkDataSet* outDs = vtkDataSet::SafeDownCast(calc->GetOutput());
+    if (!outDs) {
+        std::cerr << "[Error] addPointVectorMagnitude: 计算输出不是 vtkDataSet" << std::endl;
+        return false;
+    }
+    vtkDataArray* mag = outDs->GetPointData()->GetArray(outputName.c_str());
+    if (!mag) {
+        std::cerr << "[Error] addPointVectorMagnitude: 计算失败，输出数组不存在 " << outputName << std::endl;
+        return false;
+    }
+    vtkSmartPointer<vtkDataArray> magCopy;
+    magCopy.TakeReference(mag->NewInstance());
+    magCopy->DeepCopy(mag);
+    magCopy->SetName(outputName.c_str());
+    grid->GetPointData()->AddArray(magCopy);
     return true;
 }

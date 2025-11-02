@@ -44,6 +44,9 @@ public:
     // 统一入口：激活并显示标量场（包含存在性与范围校验、查找表与色标更新）
     bool setActiveScalar(vtkUnstructuredGrid* grid, const std::string& name, bool usePointData);
 
+    // 使用VTK管线计算点矢量模长并添加到grid
+    bool addPointVectorMagnitude(vtkUnstructuredGrid* grid, const std::string& vectorName, const std::string& outputName);
+
     // 添加坐标轴
     void addAxes();
 

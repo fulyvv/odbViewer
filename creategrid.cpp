@@ -1,36 +1,72 @@
 #include "creategrid.h"
+#include <vtkUnsignedCharArray.h>
+#include <vtkIdTypeArray.h>
+#include <vtkFloatArray.h>
 
 CreateVTKUnstucturedGrid::CreateVTKUnstucturedGrid(const readOdb& odb)
     : m_odb(odb)
 {
     m_grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
+    // 预分配单元（用于传统 InsertNextCell 路径）；批量 SetCells 也可保留此估计
+    m_grid->Allocate(static_cast<vtkIdType>(m_odb.m_elementsNum), 1);
     this->buildGeometry();
 }
 
 void CreateVTKUnstucturedGrid::buildGeometry()
 {
+    // 点坐标一次性提交（AOS: 3 组件）
     vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
-    points->SetNumberOfPoints(static_cast<vtkIdType>(m_odb.m_nodesNum));
-
+    vtkSmartPointer<vtkFloatArray> coordsArray = vtkSmartPointer<vtkFloatArray>::New();
+    coordsArray->SetNumberOfComponents(3);
+    coordsArray->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_nodesNum));
     for (std::size_t i = 0; i < m_odb.m_nodesNum; ++i) {
         const nodeCoord& nc = m_odb.m_nodesCoord[i];
-        points->SetPoint(static_cast<vtkIdType>(i), nc.x, nc.y, nc.z);
+        coordsArray->SetTuple3(static_cast<vtkIdType>(i), static_cast<float>(nc.x), static_cast<float>(nc.y), static_cast<float>(nc.z));
     }
+    points->SetData(coordsArray);
     m_grid->SetPoints(points);
 
+    // 批量设置单元（types + offsets + connectivity）
+    vtkSmartPointer<vtkUnsignedCharArray> types = vtkSmartPointer<vtkUnsignedCharArray>::New();
+    types->SetNumberOfComponents(1);
+    types->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_elementsNum));
+
+    vtkSmartPointer<vtkIdTypeArray> offsets = vtkSmartPointer<vtkIdTypeArray>::New();
+    offsets->SetNumberOfComponents(1);
+    offsets->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_elementsNum));
+
+    // 预先统计连通性总长度以优化分配
+    vtkIdType totalConn = 0;
+    for (std::size_t e = 0; e < m_odb.m_elementsNum; ++e) {
+        totalConn += static_cast<vtkIdType>(m_odb.m_elementsConn[e].size());
+    }
+    vtkSmartPointer<vtkIdTypeArray> connectivity = vtkSmartPointer<vtkIdTypeArray>::New();
+    connectivity->SetNumberOfComponents(1);
+    connectivity->SetNumberOfTuples(totalConn);
+
+    vtkIdType writePos = 0;
     for (std::size_t e = 0; e < m_odb.m_elementsNum; ++e) {
         const std::vector<std::size_t>& conn = m_odb.m_elementsConn[e];
         const std::string& abaqusType = m_odb.m_elementTypes[e];
-
         int vtkCellType = abaqusToVTKCellType(abaqusType);
-        //std::cout << "Element " << e + 1 << ": Abaqus type = " << abaqusType << ", VTK type = " << vtkCellType << "\n";
         if (vtkCellType < 0) {
             std::cerr << "[Warning] Unsupported element type \"" << abaqusType << "\" (element " << e + 1 << "). Skipped.\n";
-            continue; //跳过不支持的单元
+            types->SetValue(static_cast<vtkIdType>(e), VTK_EMPTY_CELL);
+            offsets->SetValue(static_cast<vtkIdType>(e), writePos);
+            continue;
         }
-        m_grid->InsertNextCell(vtkCellType, static_cast<vtkIdType>(conn.size()), reinterpret_cast<vtkIdType const*>(conn.data()));
+        types->SetValue(static_cast<vtkIdType>(e), static_cast<unsigned char>(vtkCellType));
+        offsets->SetValue(static_cast<vtkIdType>(e), writePos);
+        for (std::size_t j = 0; j < conn.size(); ++j) {
+            connectivity->SetValue(writePos++, static_cast<vtkIdType>(conn[j]));
+        }
     }
+
+    vtkSmartPointer<vtkCellArray> cells = vtkSmartPointer<vtkCellArray>::New();
+    cells->SetData(offsets, connectivity);
+    m_grid->SetCells(types, cells);
 }
+
 int CreateVTKUnstucturedGrid::abaqusToVTKCellType(const std::string& abaqusType)
 {
     static const std::unordered_map<std::string, int> map = {

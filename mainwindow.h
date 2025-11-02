@@ -25,12 +25,16 @@ public:
 private slots:
 	void openFile();
     void saveFile();
+    void onTreeItemActivated(const QModelIndex& index);
 
 private:
     Ui::MainWindow *ui;
 
 	VTKDisplayManager m_vtkDisplay;
 	std::unique_ptr<readOdb> m_odb;
+
+    std::unique_ptr<CreateVTKUnstucturedGrid> m_gridBuilder;
+    StepFrameInfo m_selectedStepFrame;
 
     // 模型树
     QStandardItemModel* m_treeModel{nullptr};
