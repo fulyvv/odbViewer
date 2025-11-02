@@ -2,6 +2,7 @@
 #define ODBMANAGER_H
 
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -75,6 +76,10 @@ public:
     std::vector<std::size_t> getEelementConnGlobal(std::size_t globalIdx) const;
 
     bool readFieldOutput(const std::string& stepName, int frameIndex);
+    // 按需字段读取：仅读取某一场变量（U/UR/S或其他），避免三倍数据驻留
+    bool readSingleField(const std::string& stepName, int frameIndex, const std::string& fieldName);
+    // 读取所有常用场变量（与旧接口等价）
+    bool readAllFields(const std::string& stepName, int frameIndex);
     std::vector<StepFrameInfo> getAvailableStepsFrames() const;
     const FieldData* getFieldData(const std::string& fieldName) const;
     bool hasFieldData(const std::string& fieldName) const;
@@ -102,6 +107,7 @@ private:
     void readDisplacementField(const odb_FieldOutput& fieldOutput);
     void readRotationField(const odb_FieldOutput& fieldOutput);
     void readStressField(const odb_FieldOutput& fieldOutput);
+    void readGenericField(const odb_FieldOutput& fieldOutput, const std::string& name);
 
     // 数据处理辅助方法
     void extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData& fieldData);
@@ -121,6 +127,13 @@ public:
     // 局部标签 → 全局 0‑based 索引（instance → {label : globalIdx})
     std::unordered_map<std::string, std::unordered_map<int, std::size_t>> m_nodeLocalToGlobalMap;
     std::unordered_map<std::string, std::unordered_map<int, std::size_t>> m_elementLocalToGlobalMap;
+
+    // 快速全局映射（标签 → 全局索引）
+    std::unordered_map<int, std::size_t> m_nodeLabelToGlobalIdx;
+    std::unordered_map<int, std::size_t> m_elemLabelToGlobalIdx;
+    // 重复标签检测（跨实例重复标签集合）
+    std::unordered_set<int> m_nodeDuplicateLabels;
+    std::unordered_set<int> m_elemDuplicateLabels;
 
     // 全局坐标、连通性、单元类型（与全局索引 1:1 对应）
     std::vector<nodeCoord>                m_nodesCoord;          // size = m_nodesNum

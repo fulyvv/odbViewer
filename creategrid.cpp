@@ -34,7 +34,8 @@ void CreateVTKUnstucturedGrid::buildGeometry()
 
     vtkSmartPointer<vtkIdTypeArray> offsets = vtkSmartPointer<vtkIdTypeArray>::New();
     offsets->SetNumberOfComponents(1);
-    offsets->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_elementsNum));
+    // offsets->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_elementsNum));
+    offsets->SetNumberOfTuples(static_cast<vtkIdType>(m_odb.m_elementsNum + 1));
 
     // 预先统计连通性总长度以优化分配
     vtkIdType totalConn = 0;
@@ -62,7 +63,8 @@ void CreateVTKUnstucturedGrid::buildGeometry()
             connectivity->SetValue(writePos++, static_cast<vtkIdType>(conn[j]));
         }
     }
-
+    // 末尾偏移，指向连接数组总长度
+    offsets->SetValue(static_cast<vtkIdType>(m_odb.m_elementsNum), writePos);
     vtkSmartPointer<vtkCellArray> cells = vtkSmartPointer<vtkCellArray>::New();
     cells->SetData(offsets, connectivity);
     m_grid->SetCells(types, cells);

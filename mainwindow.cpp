@@ -195,7 +195,8 @@ void MainWindow::onTreeItemActivated(const QModelIndex& index)
         }
 
         try {
-            m_odb->readFieldOutput(sf.stepName, sf.frameIndex);
+            // 按需读取：只读取用户选择的场变量，减少内存占用
+            m_odb->readSingleField(sf.stepName, sf.frameIndex, fieldName.toStdString());
             auto it = m_odb->m_fieldDataMap.find(fieldName.toStdString());
             if (it == m_odb->m_fieldDataMap.end()) {
                 QMessageBox::warning(this, tr("Warning"), tr("字段 %1 不存在于当前帧").arg(fieldName));

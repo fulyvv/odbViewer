@@ -99,6 +99,10 @@ void readOdb::constructMap()
     m_elementTypes.clear();
     m_nodeLocalToGlobalMap.clear();
     m_elementLocalToGlobalMap.clear();
+    m_nodeLabelToGlobalIdx.clear();
+    m_elemLabelToGlobalIdx.clear();
+    m_nodeDuplicateLabels.clear();
+    m_elemDuplicateLabels.clear();
     m_instanceNames.clear();
 
     std::size_t nodeGlobalIndex = 0;
@@ -125,6 +129,11 @@ void readOdb::constructMap()
             nodeLocalToGlobal[node.label()] = nodeGlobalIndex;
             const float* const coord = node.coordinates();
             m_nodesCoord.emplace_back(coord[0], coord[1], coord[2]);
+            // 全局标签到索引映射（O(1) 查找），记录重复标签
+            auto [ni, insertedN] = m_nodeLabelToGlobalIdx.emplace(node.label(), nodeGlobalIndex);
+            if (!insertedN && ni->second != nodeGlobalIndex) {
+                m_nodeDuplicateLabels.insert(node.label());
+            }
             ++nodeGlobalIndex;
         }
 
@@ -148,6 +157,11 @@ void readOdb::constructMap()
             }
             m_elementsConn.emplace_back(std::move(globalConn));
             m_elementTypes.emplace_back(element.type().CStr());
+            // 全局标签到索引映射（O(1) 查找），记录重复标签
+            auto [ei, insertedE] = m_elemLabelToGlobalIdx.emplace(element.label(), elementGlobalIndex);
+            if (!insertedE && ei->second != elementGlobalIndex) {
+                m_elemDuplicateLabels.insert(element.label());
+            }
             ++elementGlobalIndex;
         }
     }
@@ -155,6 +169,15 @@ void readOdb::constructMap()
     // 更新总数
     m_nodesNum = nodeGlobalIndex;
     m_elementsNum = elementGlobalIndex;
+
+    if (!m_nodeDuplicateLabels.empty()) {
+        std::cerr << "[Warning] Duplicate node labels detected across instances. Count="
+                  << m_nodeDuplicateLabels.size() << std::endl;
+    }
+    if (!m_elemDuplicateLabels.empty()) {
+        std::cerr << "[Warning] Duplicate element labels detected across instances. Count="
+                  << m_elemDuplicateLabels.size() << std::endl;
+    }
 }
 
 //读取所有可用的step和frame信息
@@ -186,67 +209,7 @@ void readOdb::readStepFrameInfo()
 
 bool readOdb::readFieldOutput(const std::string& stepName, int frameIndex)
 {
-    //查找指定step和frame，读取场输出数据
-    const odb_String& stepNameOdbStr = odb_String(stepName.c_str());
-    const odb_StepRepository& steps = m_odb->steps();
-    if (!steps.isMember(stepNameOdbStr)) {
-        std::cerr << "[Error] Step '" << stepName << "' not found." << std::endl;
-        return false;
-    }
-
-    const odb_Step& step = steps.constGet(stepNameOdbStr);
-    const odb_SequenceFrame& allFramesInStep = step.frames();
-
-    // 查找指定的frame
-    odb_Frame* targetFrame = nullptr;
-    int numFrames = allFramesInStep.size();
-    for (int i = 0; i < numFrames; ++i) {
-        const odb_Frame& frame = allFramesInStep[i];
-        if (frame.frameId() == frameIndex) {
-            targetFrame = const_cast<odb_Frame*>(&frame);
-            break;
-        }
-    }
-
-    if (!targetFrame) {
-        std::cerr << "[Error] Frame " << frameIndex << " not found in step '" << stepName << "'." << std::endl;
-        return false;
-    }
-
-    // 更新当前step/frame信息
-    m_currentStepFrame.stepName = stepName;
-    m_currentStepFrame.frameIndex = frameIndex;
-    m_currentStepFrame.frameValue = targetFrame->frameValue();
-    m_currentStepFrame.description = targetFrame->description().cStr();
-
-    // 清除之前的场数据
-    m_fieldDataMap.clear();
-
-    // 读取场输出数据
-    const odb_FieldOutputRepository& fieldOutputs = targetFrame->fieldOutputs();
-
-    // 读取位移场 (U)
-    if (fieldOutputs.isMember("U")) {
-        readDisplacementField(fieldOutputs["U"]);
-    }
-
-    // 读取旋转场 (UR)
-    if (fieldOutputs.isMember("UR")) {
-        readRotationField(fieldOutputs["UR"]);
-    }
-
-    // 读取应力场 (S)
-    if (fieldOutputs.isMember("S")) {
-        readStressField(fieldOutputs["S"]);
-    }
-
-    m_hasFieldData = !m_fieldDataMap.empty();
-
-    std::cout << "[Info] Successfully read field output for step '" << stepName
-              << "', frame " << frameIndex << ". Found " << m_fieldDataMap.size()
-              << " field variables." << std::endl;
-
-    return true;
+    return readAllFields(stepName, frameIndex);
 }
 
 void readOdb::readDisplacementField(const odb_FieldOutput& fieldOutput)
@@ -407,27 +370,171 @@ void readOdb::extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData&
 
 std::size_t readOdb::mapFieldDataToGlobalIndices(int label, bool isNode)
 {
+    // 使用 O(1) 哈希映射；若存在重复标签，返回首次构建时索引并在 constructMap() 统一告警
     if (isNode) {
-        // 节点标签到全局索引的映射
-        for (const auto& pair : m_nodeLocalToGlobalMap) {
-            for (const auto& nodePair : pair.second) {
-                if (nodePair.first == label) {
-                    return nodePair.second;
-                }
-            }
-        }
-    }
-    else {
-        // 单元标签到全局索引的映射
-        for (const auto& pair : m_elementLocalToGlobalMap) {
-            for (const auto& elemPair : pair.second) {
-                if (elemPair.first == label) {
-                    return elemPair.second;
-                }
-            }
-        }
+        auto it = m_nodeLabelToGlobalIdx.find(label);
+        if (it != m_nodeLabelToGlobalIdx.end()) return it->second;
+    } else {
+        auto it = m_elemLabelToGlobalIdx.find(label);
+        if (it != m_elemLabelToGlobalIdx.end()) return it->second;
     }
     return SIZE_MAX; // 未找到时返回最大值
+}
+
+bool readOdb::readAllFields(const std::string& stepName, int frameIndex)
+{
+    //查找指定step和frame，读取场输出数据
+    const odb_String& stepNameOdbStr = odb_String(stepName.c_str());
+    const odb_StepRepository& steps = m_odb->steps();
+    if (!steps.isMember(stepNameOdbStr)) {
+        std::cerr << "[Error] Step '" << stepName << "' not found." << std::endl;
+        return false;
+    }
+
+    const odb_Step& step = steps.constGet(stepNameOdbStr);
+    const odb_SequenceFrame& allFramesInStep = step.frames();
+
+    // 查找指定的frame
+    odb_Frame* targetFrame = nullptr;
+    int numFrames = allFramesInStep.size();
+    for (int i = 0; i < numFrames; ++i) {
+        const odb_Frame& frame = allFramesInStep[i];
+        if (frame.frameId() == frameIndex) {
+            targetFrame = const_cast<odb_Frame*>(&frame);
+            break;
+        }
+    }
+
+    if (!targetFrame) {
+        std::cerr << "[Error] Frame " << frameIndex << " not found in step '" << stepName << "'." << std::endl;
+        return false;
+    }
+
+    // 更新当前step/frame信息
+    m_currentStepFrame.stepName = stepName;
+    m_currentStepFrame.frameIndex = frameIndex;
+    m_currentStepFrame.frameValue = targetFrame->frameValue();
+    m_currentStepFrame.description = targetFrame->description().cStr();
+
+    // 清除之前的场数据
+    m_fieldDataMap.clear();
+
+    // 读取场输出数据
+    const odb_FieldOutputRepository& fieldOutputs = targetFrame->fieldOutputs();
+
+    // 读取位移场 (U)
+    if (fieldOutputs.isMember("U")) {
+        readDisplacementField(fieldOutputs["U"]);
+    }
+
+    // 读取旋转场 (UR)
+    if (fieldOutputs.isMember("UR")) {
+        readRotationField(fieldOutputs["UR"]);
+    }
+
+    // 读取应力场 (S)
+    if (fieldOutputs.isMember("S")) {
+        readStressField(fieldOutputs["S"]);
+    }
+
+    m_hasFieldData = !m_fieldDataMap.empty();
+
+    std::cout << "[Info] Successfully read field output for step '" << stepName
+              << "', frame " << frameIndex << ". Found " << m_fieldDataMap.size()
+              << " field variables." << std::endl;
+
+    return true;
+}
+
+bool readOdb::readSingleField(const std::string& stepName, int frameIndex, const std::string& fieldName)
+{
+    //查找指定step和frame
+    const odb_String& stepNameOdbStr = odb_String(stepName.c_str());
+    const odb_StepRepository& steps = m_odb->steps();
+    if (!steps.isMember(stepNameOdbStr)) {
+        std::cerr << "[Error] Step '" << stepName << "' not found." << std::endl;
+        return false;
+    }
+
+    const odb_Step& step = steps.constGet(stepNameOdbStr);
+    const odb_SequenceFrame& allFramesInStep = step.frames();
+
+    odb_Frame* targetFrame = nullptr;
+    int numFrames = allFramesInStep.size();
+    for (int i = 0; i < numFrames; ++i) {
+        const odb_Frame& frame = allFramesInStep[i];
+        if (frame.frameId() == frameIndex) {
+            targetFrame = const_cast<odb_Frame*>(&frame);
+            break;
+        }
+    }
+
+    if (!targetFrame) {
+        std::cerr << "[Error] Frame " << frameIndex << " not found in step '" << stepName << "'." << std::endl;
+        return false;
+    }
+
+    // 更新当前step/frame信息
+    m_currentStepFrame.stepName = stepName;
+    m_currentStepFrame.frameIndex = frameIndex;
+    m_currentStepFrame.frameValue = targetFrame->frameValue();
+    m_currentStepFrame.description = targetFrame->description().cStr();
+
+    // 清空旧场数据，仅保留当前请求的场
+    m_fieldDataMap.clear();
+
+    const odb_FieldOutputRepository& fieldOutputs = targetFrame->fieldOutputs();
+    if (!fieldOutputs.isMember(fieldName.c_str())) {
+        std::cerr << "[Error] Field '" << fieldName << "' not found in frame." << std::endl;
+        return false;
+    }
+    const odb_FieldOutput& F = fieldOutputs[fieldName.c_str()];
+
+    if (fieldName == "U") {
+        readDisplacementField(F);
+    } else if (fieldName == "UR") {
+        readRotationField(F);
+    } else if (fieldName == "S") {
+        readStressField(F);
+    } else {
+        readGenericField(F, fieldName);
+    }
+
+    m_hasFieldData = !m_fieldDataMap.empty();
+
+    return true;
+}
+
+void readOdb::readGenericField(const odb_FieldOutput& fieldOutput, const std::string& name)
+{
+    FieldData fieldData;
+    fieldData.name = name;
+    fieldData.description = fieldOutput.description().cStr();
+
+    // 组件标签
+    const odb_SequenceString& componentLabels = fieldOutput.componentLabels();
+    for (int i = 0; i < componentLabels.size(); ++i) {
+        fieldData.componentLabels.push_back(componentLabels[i].cStr());
+    }
+    fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
+
+    // 提取值
+    extractFieldValues2(fieldOutput, fieldData);
+
+    // 根据位置选择类型，用于后续显示渠道（使用 locations() 序列）
+    bool isNodal = false;
+    try {
+        const auto& locs = fieldOutput.locations();
+        if (locs.size() > 0) {
+            const auto pos = locs[0].position();
+            isNodal = (pos == odb_Enum::NODAL);
+        }
+    } catch (...) {
+        // 若 API 不支持或发生异常，则保持默认 false
+    }
+    fieldData.type = isNodal ? FieldType::DISPLACEMENT : FieldType::STRESS;
+
+    m_fieldDataMap[name] = std::move(fieldData);
 }
 
 std::vector<StepFrameInfo> readOdb::getAvailableStepsFrames() const
