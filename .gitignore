@@ -1,0 +1,114 @@
+# =========================
+# Qt / C++ 项目通用配置
+# =========================
+
+# ---- 构建输出目录 ----
+build*/
+*/build*/
+bin/
+lib/
+out/
+dist/
+debug/
+release/
+Release/
+Debug/
+out/
+.vs/
+
+# ---- CMake 生成文件 ----
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+*.cmake.user
+CMakePresets.json
+CMakeUserPresets.json
+CMakeLists.txt.user
+
+# ---- Qt Creator 生成文件 ----
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.creator.user
+*.creator.user.*
+*.autosave
+
+# ---- Qt 生成的 MOC/UIC 文件 ----
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+*.moc
+*.qmlc
+*.jsc
+object_script.*
+
+# ---- VSCode / CLion / Visual Studio 配置 ----
+.vscode/
+.idea/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.user
+*.opensdf
+*.sdf
+*.ipch
+
+# ---- 系统文件 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 其他常见中间文件 ----
+*.obj
+*.o
+*.lo
+*.la
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+*.pdb
+*.idb
+*.tmp
+*.log
+
+# ---- Qt 自动生成的资源或临时文件 ----
+*.qmake.stash
+*.qmake.cache
+*.qmlproject.user
+*.qmlproject.user.*
+
+# ---- 测试或缓存文件 ----
+*.gcno
+*.gcda
+*.gcov
+*.profraw
+*.profdata
+.cache/
+__pycache__/
+
+# ---- Python / scripts (如果包含工具脚本) ----
+*.pyc
+*.pyo
+*.pyd
+
+# ---- 打包文件 ----
+*.zip
+*.tar.gz
+*.7z
+
+# ---- 环境文件 ----
+.env
+.env.*
+
+# ---- 项目特定忽略（根据需要添加） ----
+# e.g., 忽略资源缓存、模型文件中间结果等
+# data/cache/
+# temp/
+# logs/
