@@ -64,6 +64,34 @@ void MainWindow::openFile() {
         m_vtkDisplay.addAxes();
         m_vtkDisplay.getRenderWindow()->Render();
 
+        // 读取首帧的场变量（用于测试显示 U）
+        const auto frames = m_odb->getAvailableStepsFrames();
+        if (!frames.empty()) {
+            const auto& sf = frames.front();
+            if (m_odb->readFieldOutput(sf.stepName, sf.frameIndex) && m_odb->hasFieldData("U")) {
+                const FieldData* uData = m_odb->getFieldData("U");
+                if (uData) {
+                    // 计算位移模长 U.Magnitude 并作为点标量添加
+                    std::vector<double> uMag(m_odb->m_nodesNum, 0.0);
+                    for (std::size_t i = 0; i < m_odb->m_nodesNum; ++i) {
+                        if (i < uData->nodeValues.size() && uData->nodeValidFlags[i]) {
+                            const auto& v = uData->nodeValues[i];
+                            const double u1 = v.size() > 0 ? v[0] : 0.0;
+                            const double u2 = v.size() > 1 ? v[1] : 0.0;
+                            const double u3 = v.size() > 2 ? v[2] : 0.0;
+                            uMag[i] = std::sqrt(u1 * u1 + u2 * u2 + u3 * u3);
+                        } else {
+                            uMag[i] = 0.0;
+                        }
+                    }
+                    grid.addPointScalar("U.Magnitude", uMag);
+                    // 激活标量显示（点数据）
+                    m_vtkDisplay.setActiveScalar(grid.getGrid(), "U.Magnitude", /*usePointData*/ true);
+                }
+            }
+        }
+
+
 		ui->statusBar->showMessage(tr("Successfully opened ODB file: %1").arg(fileName), 5000);
         // 构建左侧模型树（实例、步/帧、可用场变量）
         buildModelTree();

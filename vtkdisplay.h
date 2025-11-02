@@ -2,12 +2,15 @@
 #define VTKDISPLAY_H
 
 #include <algorithm>
+#include <string>
 #include <vtkGenericOpenGLRenderWindow.h>
 #include <vtkRenderer.h>
 #include <vtkRenderWindowInteractor.h>
 #include <vtkDataSetMapper.h>
 #include <vtkActor.h>
 #include <vtkProperty.h>
+#include <vtkActorCollection.h>
+#include <vtkActor2DCollection.h>
 #include <vtkScalarBarActor.h>
 #include <vtkLookupTable.h>
 #include <vtkCamera.h>
@@ -18,6 +21,7 @@
 #include <vtkCellData.h>
 #include <vtkColorTransferFunction.h>
 #include <vtkTextProperty.h>
+#include <vtkDataArray.h>
 
 #include "odbmanager.h"
 #include "creategrid.h"
@@ -36,6 +40,9 @@ public:
 
     // 显示带标量场的网格（彩色云图）
     void displayWithScalarField(vtkUnstructuredGrid* grid, const std::string& scalarName, bool usePointData);
+
+    // 统一入口：激活并显示标量场（包含存在性与范围校验、查找表与色标更新）
+    bool setActiveScalar(vtkUnstructuredGrid* grid, const std::string& name, bool usePointData);
 
     // 添加坐标轴
     void addAxes();
@@ -56,6 +63,14 @@ private:
     vtkSmartPointer<vtkRenderer> renderer;
     vtkSmartPointer<vtkGenericOpenGLRenderWindow> renderWindow;
     vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor;
+
+    // 持久化并复用显示对象，避免演员累积与状态混乱
+    vtkSmartPointer<vtkDataSetMapper> m_mapper;
+    vtkSmartPointer<vtkActor> m_actor;
+    vtkSmartPointer<vtkScalarBarActor> m_scalarBar;
+    vtkSmartPointer<vtkLookupTable> m_lut;
+    bool m_actorAdded = false;
+    bool m_scalarBarAdded = false;
 
     void addScalarBar(vtkSmartPointer<vtkDataSetMapper> mapper, const std::string& title);
 };
