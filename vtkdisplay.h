@@ -56,7 +56,6 @@ public:
     // 开始显示
     void start();
 
-    // 由外部（如 QVTK 小部件）传入交互器，以避免重复创建
     void setInteractor(vtkRenderWindowInteractor* interactor);
 
     vtkGenericOpenGLRenderWindow* getRenderWindow() const { return renderWindow.Get(); }
@@ -67,7 +66,6 @@ private:
     vtkSmartPointer<vtkGenericOpenGLRenderWindow> renderWindow;
     vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor;
 
-    // 持久化并复用显示对象，避免演员累积与状态混乱
     vtkSmartPointer<vtkDataSetMapper> m_mapper;
     vtkSmartPointer<vtkActor> m_actor;
     vtkSmartPointer<vtkScalarBarActor> m_scalarBar;

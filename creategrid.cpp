@@ -9,14 +9,13 @@ CreateVTKUnstucturedGrid::CreateVTKUnstucturedGrid(const readOdb& odb)
     : m_odb(odb)
 {
     m_grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
-    // 预分配单元（用于传统 InsertNextCell 路径）；批量 SetCells 也可保留此估计
+    // 预分配单元（用于传统 InsertNextCell 路径）
     m_grid->Allocate(static_cast<vtkIdType>(m_odb.m_elementsNum), 1);
     this->buildGeometry();
 }
 
 void CreateVTKUnstucturedGrid::buildGeometry()
 {
-    // 点坐标一次性提交（AOS: 3 组件）
     vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
     vtkSmartPointer<vtkFloatArray> coordsArray = vtkSmartPointer<vtkFloatArray>::New();
     coordsArray->SetNumberOfComponents(3);
@@ -244,7 +243,7 @@ bool CreateVTKUnstucturedGrid::addDisplacementField(FieldData& displacementField
         std::cout << "[Info] Applied displacement with scale factor: " << scaleFactor << std::endl;
     }
 
-    // 减少双驻留：位移场已推入 VTK，可丢弃缓存
+    // 位移场已加入网格，可丢弃缓存
     std::vector<float>().swap(displacementField.nodeValues);
     std::vector<uint8_t>().swap(displacementField.nodeValidFlags);
 
@@ -258,7 +257,6 @@ bool CreateVTKUnstucturedGrid::addStressField(FieldData& stressField, const std:
         return false;
     }
 
-    // 添加完整的应力张量
     if (!addFieldData(stressField)) {
         return false;
     }
@@ -291,7 +289,6 @@ bool CreateVTKUnstucturedGrid::addStressField(FieldData& stressField, const std:
     // 计算von Mises应力
     calculateVonMisesStress(stressField);
 
-    // 减少双驻留：应力场已推入 VTK，可丢弃缓存
     std::vector<float>().swap(stressField.elementValues);
     std::vector<uint8_t>().swap(stressField.elementValidFlags);
 

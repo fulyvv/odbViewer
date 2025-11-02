@@ -21,8 +21,6 @@ readOdb::~readOdb()
 
 void readOdb::constructMap()
 {
-    // 合并：一次遍历装配中的实例，同时统计总数、建立局部→全局映射、填充坐标与连通性
-
     // 清理旧数据
     m_nodesCoord.clear();
     m_elementsConn.clear();
@@ -155,11 +153,7 @@ void readOdb::readDisplacementField(const odb_FieldOutput& fieldOutput)
         fieldData.componentLabels.push_back(componentLabels[i].cStr());
     }
     fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
-
-    // 提取场值
     extractFieldValues2(fieldOutput, fieldData);
-
-    // 存储到map中
     m_fieldDataMap["U"] = fieldData;
 
     std::cout << "[Info] Read displacement field with " << m_nodesNum
@@ -179,11 +173,7 @@ void readOdb::readRotationField(const odb_FieldOutput& fieldOutput)
         fieldData.componentLabels.push_back(componentLabels[i].cStr());
     }
     fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
-
-    // 提取场值
     extractFieldValues2(fieldOutput, fieldData);
-
-    // 存储到map中
     m_fieldDataMap["UR"] = fieldData;
 
     std::cout << "[Info] Read rotation field with " << m_nodesNum
@@ -203,11 +193,7 @@ void readOdb::readStressField(const odb_FieldOutput& fieldOutput)
         fieldData.componentLabels.push_back(componentLabels[i].cStr());
     }
     fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
-
-    // 提取场值
     extractFieldValues2(fieldOutput, fieldData);
-
-    // 存储到map中
     m_fieldDataMap["S"] = fieldData;
 
     std::cout << "[Info] Read stress field with " << m_elementsNum
@@ -217,11 +203,8 @@ void readOdb::readStressField(const odb_FieldOutput& fieldOutput)
 void readOdb::extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData& fieldData)
 {
     try {
-        // 获取bulk data blocks
         const odb_SequenceFieldBulkData& bulkDataBlocks = fieldOutput.bulkDataBlocks();
         int numBlocks = bulkDataBlocks.size();
-
-        // 获取组件数量
         int numComponents = fieldOutput.componentLabels().size();
         fieldData.components = numComponents;
 
@@ -230,7 +213,6 @@ void readOdb::extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData&
         bool isNodalData = (position == odb_Enum::NODAL);
 
         if (isNodalData) {
-            // 节点数据处理（扁平化 + float + uint8_t）
             fieldData.nodeValues.assign(m_nodesNum * numComponents, 0.0f);
             fieldData.nodeValidFlags.assign(m_nodesNum, 0);
 
@@ -257,7 +239,6 @@ void readOdb::extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData&
                 }
             }
         } else {
-            // 单元数据处理（扁平化 + float + uint8_t）
             fieldData.elementValues.assign(m_elementsNum * numComponents, 0.0f);
             fieldData.elementValidFlags.assign(m_elementsNum, 0);
 
@@ -272,7 +253,7 @@ void readOdb::extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData&
                 int numIP = (nElems > 0) ? numValues / nElems : 1; // 每单元积分点数
                 int dataPosition = 0;
                 // 尝试获取积分点信息（可选，不使用）
-                try { (void)bulkData.integrationPoints(); } catch (...) {}
+                //try { (void)bulkData.integrationPoints(); } catch (...) {}
 
                 for (int elem = 0; elem < nElems; elem++) {
                     int elementLabel = elementLabels[elem];
@@ -300,7 +281,7 @@ void readOdb::extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData&
 
 std::size_t readOdb::mapFieldDataToGlobalIndices(int label, bool isNode)
 {
-    // 使用 O(1) 哈希映射；若存在重复标签，返回首次构建时索引并在 constructMap() 统一告警
+    // 若存在重复标签，返回首次构建时索引并在 constructMap() 统一告警
     if (isNode) {
         auto it = m_nodeLabelToGlobalIdx.find(label);
         if (it != m_nodeLabelToGlobalIdx.end()) return it->second;
@@ -313,7 +294,6 @@ std::size_t readOdb::mapFieldDataToGlobalIndices(int label, bool isNode)
 
 bool readOdb::readAllFields(const std::string& stepName, int frameIndex)
 {
-    //查找指定step和frame，读取场输出数据
     const odb_String& stepNameOdbStr = odb_String(stepName.c_str());
     const odb_StepRepository& steps = m_odb->steps();
     if (!steps.isMember(stepNameOdbStr)) {
@@ -340,35 +320,27 @@ bool readOdb::readAllFields(const std::string& stepName, int frameIndex)
         return false;
     }
 
-    // 更新当前step/frame信息
     m_currentStepFrame.stepName = stepName;
     m_currentStepFrame.frameIndex = frameIndex;
     m_currentStepFrame.frameValue = targetFrame->frameValue();
     m_currentStepFrame.description = targetFrame->description().cStr();
-
-    // 清除之前的场数据
     m_fieldDataMap.clear();
 
     // 读取场输出数据
     const odb_FieldOutputRepository& fieldOutputs = targetFrame->fieldOutputs();
-
-    // 读取位移场 (U)
     if (fieldOutputs.isMember("U")) {
         readDisplacementField(fieldOutputs["U"]);
     }
 
-    // 读取旋转场 (UR)
     if (fieldOutputs.isMember("UR")) {
         readRotationField(fieldOutputs["UR"]);
     }
 
-    // 读取应力场 (S)
     if (fieldOutputs.isMember("S")) {
         readStressField(fieldOutputs["S"]);
     }
 
     m_hasFieldData = !m_fieldDataMap.empty();
-
     std::cout << "[Info] Successfully read field output for step '" << stepName
               << "', frame " << frameIndex << ". Found " << m_fieldDataMap.size()
               << " field variables." << std::endl;
@@ -378,7 +350,6 @@ bool readOdb::readAllFields(const std::string& stepName, int frameIndex)
 
 bool readOdb::readSingleField(const std::string& stepName, int frameIndex, const std::string& fieldName)
 {
-    //查找指定step和frame
     const odb_String& stepNameOdbStr = odb_String(stepName.c_str());
     const odb_StepRepository& steps = m_odb->steps();
     if (!steps.isMember(stepNameOdbStr)) {
@@ -404,13 +375,10 @@ bool readOdb::readSingleField(const std::string& stepName, int frameIndex, const
         return false;
     }
 
-    // 更新当前step/frame信息
     m_currentStepFrame.stepName = stepName;
     m_currentStepFrame.frameIndex = frameIndex;
     m_currentStepFrame.frameValue = targetFrame->frameValue();
     m_currentStepFrame.description = targetFrame->description().cStr();
-
-    // 清空旧场数据，仅保留当前请求的场
     m_fieldDataMap.clear();
 
     const odb_FieldOutputRepository& fieldOutputs = targetFrame->fieldOutputs();
@@ -448,7 +416,6 @@ void readOdb::readGenericField(const odb_FieldOutput& fieldOutput, const std::st
     }
     fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
 
-    // 提取值
     extractFieldValues2(fieldOutput, fieldData);
 
     // 根据位置选择类型，用于后续显示渠道（使用 locations() 序列）
@@ -494,14 +461,12 @@ const std::string& readOdb::getOdbFullName() const { return m_odbFullName; }
 
 void readOdb::releaseGeometryCache()
 {
-    // 清空几何大块数据，保留轻量索引映射以支持场映射
     std::vector<nodeCoord>().swap(m_nodesCoord);
     std::vector<std::vector<std::size_t>>().swap(m_elementsConn);
     std::vector<std::string>().swap(m_elementTypes);
     std::cout << "[Info] Released geometry caches: nodesCoord, elementsConn, elementTypes." << std::endl;
 }
 
-// 轻探测：列出某帧可用场变量及其分量标签（不读取 bulkData）
 std::vector<std::pair<std::string, std::vector<std::string>>>
 readOdb::listFieldNames(const std::string& stepName, int frameIndex) const
 {
@@ -532,7 +497,6 @@ readOdb::listFieldNames(const std::string& stepName, int frameIndex) const
 
     const odb_FieldOutputRepository& fieldOutputs = targetFrame->fieldOutputs();
     try {
-        // 迭代仓库键值以获取所有场及其分量标签
         odb_FieldOutputRepositoryIT foIter(fieldOutputs);
         for (foIter.first(); !foIter.isDone(); foIter.next()) {
             std::string fname = foIter.currentKey().CStr();

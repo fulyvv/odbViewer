@@ -61,26 +61,23 @@ public:
     readOdb(const char* odbFullname);
     ~readOdb();
 
-
     bool readFieldOutput(const std::string& stepName, int frameIndex);
-    // 按需字段读取：仅读取某一场变量（U/UR/S或其他），避免三倍数据驻留
     bool readSingleField(const std::string& stepName, int frameIndex, const std::string& fieldName);
-    // 读取所有常用场变量（与旧接口等价）
     bool readAllFields(const std::string& stepName, int frameIndex);
+
     std::vector<StepFrameInfo> getAvailableStepsFrames() const;
     const FieldData* getFieldData(const std::string& fieldName) const;
     bool hasFieldData(const std::string& fieldName) const;
     StepFrameInfo getCurrentStepFrame() const;
 
-    // 轻探测：列出某帧可用场变量及其分量标签（不读取 bulkData）
-    std::vector<std::pair<std::string, std::vector<std::string>>> listFieldNames(const std::string& stepName, int frameIndex) const;
+    //列出某帧可用场变量及其分量标签
+    std::vector<std::pair<std::string, std::vector<std::string>>> 
+        listFieldNames(const std::string& stepName, int frameIndex) const;
 
-    // 公开的文件路径/名称访问器
     const std::string& getOdbPath() const;
     const std::string& getOdbBaseName() const;
     const std::string& getOdbFullName() const;
 
-    // 在构建 VTK 网格后释放几何缓存（保留轻量索引映射）
     void releaseGeometryCache();
 
 private:

@@ -11,7 +11,6 @@ VTKDisplayManager::VTKDisplayManager()
     renderWindow->AddRenderer(renderer);
     renderer->SetBackground(0.1, 0.2, 0.3); // 深蓝色背景
 
-    // 显示对象延迟创建以便按需复用
     m_mapper = nullptr;
     m_actor = nullptr;
     m_scalarBar = nullptr;
@@ -83,7 +82,6 @@ void VTKDisplayManager::displayWithScalarField(vtkUnstructuredGrid* grid,
                                                const std::string& scalarName,
                                                bool usePointData = true)
 {
-    // 统一走 setActiveScalar 的闭合流程
     if (!setActiveScalar(grid, scalarName, usePointData)) {
         std::cerr << "[Error] 标量显示失败: " << scalarName << std::endl;
     }
@@ -165,7 +163,6 @@ void VTKDisplayManager::start()
 
 void VTKDisplayManager::addScalarBar(vtkSmartPointer<vtkDataSetMapper> mapper, const std::string& title)
 {
-    // 复用持久化的标量条
     if (!m_scalarBar)
         m_scalarBar = vtkSmartPointer<vtkScalarBarActor>::New();
 
@@ -201,7 +198,6 @@ bool VTKDisplayManager::setActiveScalar(vtkUnstructuredGrid* grid, const std::st
         return false;
     }
 
-    // 准备复用对象
     if (!m_mapper)
         m_mapper = vtkSmartPointer<vtkDataSetMapper>::New();
     if (!m_actor)
@@ -211,7 +207,7 @@ bool VTKDisplayManager::setActiveScalar(vtkUnstructuredGrid* grid, const std::st
 
     m_mapper->SetInputData(grid);
 
-    // 读取数组并做存在性/大小校验
+    // 读取数组并做校验
     vtkDataArray* arr = nullptr;
     if (usePointData) {
         arr = grid->GetPointData()->GetArray(name.c_str());

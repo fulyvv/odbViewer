@@ -58,7 +58,6 @@ void MainWindow::openFile() {
     }
 
     try {
-        // 构造并持有网格构建器，仅加载几何
         m_gridBuilder = std::make_unique<CreateVTKUnstucturedGrid>(*m_odb);
         // 先显示基础几何
         m_vtkDisplay.displaySolid(m_gridBuilder->getGrid());
@@ -68,14 +67,13 @@ void MainWindow::openFile() {
         // 构建完成后释放 readOdb 中的几何缓存，保留索引映射
         m_odb->releaseGeometryCache();
 
-        // 推迟场读取：打开时不读取 U/UR/S，按需加载
+        // 打开时不读取 U/UR/S，按需加载
         const auto frames = m_odb->getAvailableStepsFrames();
         if (!frames.empty()) {
             m_selectedStepFrame = frames.front();
         }
 
         m_vtkDisplay.getRenderWindow()->Render();
-
         ui->statusBar->showMessage(tr("Successfully opened ODB file: %1").arg(fileName), 5000);
 
         // 构建左侧模型树（实例、步/帧、可用场变量）
@@ -107,13 +105,13 @@ void MainWindow::buildModelTree()
     if (!m_odb)
         return;
 
-    // 1) 实例
+    //实例
     for (const auto& instName : m_odb->m_instanceNames) {
         QStandardItem* instItem = new QStandardItem(QString::fromStdString(instName));
         instancesRoot->appendRow(instItem);
     }
 
-    // 2) 步与帧（按步分组）
+    //步与帧（按步分组）
     const auto frames = m_odb->getAvailableStepsFrames();
     std::map<QString, std::vector<StepFrameInfo>> grouped;
     for (const auto& sf : frames) {
@@ -134,7 +132,7 @@ void MainWindow::buildModelTree()
         }
     }
 
-    // 3) 可用场变量（轻探测：不读取 bulkData）
+    //可用场变量
     if (!frames.empty()) {
         const auto& first = frames.front();
         auto fieldInfos = m_odb->listFieldNames(first.stepName, first.frameIndex);
