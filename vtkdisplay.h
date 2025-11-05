@@ -70,6 +70,7 @@ private:
     vtkSmartPointer<vtkActor> m_actor;
     vtkSmartPointer<vtkScalarBarActor> m_scalarBar;
     vtkSmartPointer<vtkLookupTable> m_lut;
+    vtkSmartPointer<vtkOrientationMarkerWidget> axes_widget;
     bool m_actorAdded = false;
     bool m_scalarBarAdded = false;
 

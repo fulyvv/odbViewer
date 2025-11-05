@@ -9,7 +9,7 @@ VTKDisplayManager::VTKDisplayManager()
     renderWindow = vtkSmartPointer<vtkGenericOpenGLRenderWindow>::New();
 
     renderWindow->AddRenderer(renderer);
-    renderer->SetBackground(0.1, 0.2, 0.3); // 深蓝色背景
+    renderer->SetBackground(0.7, 0.7, 0.7); // 深蓝色背景
 
     m_mapper = nullptr;
     m_actor = nullptr;
@@ -93,13 +93,12 @@ void VTKDisplayManager::addAxes()
     vtkSmartPointer<vtkAxesActor> axes = vtkSmartPointer<vtkAxesActor>::New();
     axes->SetTotalLength(1.0, 1.0, 1.0);
 
-    vtkSmartPointer<vtkOrientationMarkerWidget> widget =
-        vtkSmartPointer<vtkOrientationMarkerWidget>::New();
-    widget->SetOrientationMarker(axes);
-    widget->SetInteractor(renderWindowInteractor);
-    widget->SetViewport(0.0, 0.0, 0.2, 0.2);
-    widget->SetEnabled(1);
-    widget->InteractiveOff();
+    axes_widget = vtkSmartPointer<vtkOrientationMarkerWidget>::New();
+    axes_widget->SetOrientationMarker(axes);
+    axes_widget->SetInteractor(renderWindowInteractor);
+    axes_widget->SetViewport(0.0, 0.0, 0.2, 0.2);
+    axes_widget->SetEnabled(1);
+    axes_widget->InteractiveOff();
 
     std::cout << "[Info] 添加坐标轴" << std::endl;
 }
