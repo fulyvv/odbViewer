@@ -1,5 +1,6 @@
 #include "odbmanager.h"
 
+
 readOdb::readOdb(const char* odbFullname)
 {
     odb_initializeAPI();
@@ -7,9 +8,9 @@ readOdb::readOdb(const char* odbFullname)
     m_odbFullName = std::string(odbFullname);
     m_odbPath = m_odbFullName.substr(0, m_odbFullName.find_last_of("/\\"));
     m_odbBaseName = m_odbFullName.substr(m_odbFullName.find_last_of("/\\") + 1);
-    m_odb = &openOdb(odbFile.CStr(), /*readOnly*/ true);
+    m_odb = &openOdb(odbFile.CStr(), true);
     readStepFrameInfo();
-    constructMap();
+    initializeGeometry();
 }
 
 readOdb::~readOdb()
@@ -17,21 +18,12 @@ readOdb::~readOdb()
     m_odb->close();
 }
 
-
-
-void readOdb::constructMap()
+void readOdb::initializeGeometry()
 {
-    // 清理旧数据
     m_nodesCoord.clear();
     m_elementsConn.clear();
     m_elementTypes.clear();
-    m_nodeLocalToGlobalMap.clear();
-    m_elementLocalToGlobalMap.clear();
-    m_nodeLabelToGlobalIdx.clear();
-    m_elemLabelToGlobalIdx.clear();
-    m_nodeDuplicateLabels.clear();
-    m_elemDuplicateLabels.clear();
-    m_instanceNames.clear();
+    m_instanceInfos.clear();
 
     std::size_t nodeGlobalIndex = 0;
     std::size_t elementGlobalIndex = 0;
@@ -39,73 +31,54 @@ void readOdb::constructMap()
     odb_Assembly& rootAssy = m_odb->rootAssembly();
     odb_InstanceRepositoryIT instIter(rootAssy.instances());
     for (instIter.first(); !instIter.isDone(); instIter.next()) {
-        const std::string inst_name = instIter.currentKey().CStr();
+        InstanceInfo info;
+        info.name = instIter.currentKey().CStr();
         const odb_Instance& inst = instIter.currentValue();
-        m_instanceNames.emplace_back(inst_name);
 
         auto node_list = inst.nodes();
         auto element_list = inst.elements();
 
-        auto& nodeLocalToGlobal = m_nodeLocalToGlobalMap[inst_name];
-        auto& elementLocalToGlobal = m_elementLocalToGlobalMap[inst_name];
-        nodeLocalToGlobal.reserve(node_list.size());
-        elementLocalToGlobal.reserve(element_list.size());
+        info.nodeStartIndex = nodeGlobalIndex;
 
-        // 节点：建立映射并填充坐标（push_back 连续内存）
+        // 节点：建立映射并填充坐标
         for (int i = 0; i < node_list.size(); ++i) {
             auto node = node_list[i];
-            nodeLocalToGlobal[node.label()] = nodeGlobalIndex;
+            info.nodeLabelToIndex[node.label()] = nodeGlobalIndex;
             const float* const coord = node.coordinates();
             m_nodesCoord.emplace_back(coord[0], coord[1], coord[2]);
-            // 全局标签到索引映射（O(1) 查找），记录重复标签
-            auto [ni, insertedN] = m_nodeLabelToGlobalIdx.emplace(node.label(), nodeGlobalIndex);
-            if (!insertedN && ni->second != nodeGlobalIndex) {
-                m_nodeDuplicateLabels.insert(node.label());
-            }
             ++nodeGlobalIndex;
         }
+        info.nodeCount = static_cast<std::size_t>(node_list.size());
 
-        // 单元：建立映射并填充连通性与类型（使用已构建的节点映射）
+        // 单元：建立映射并填充连通性与类型
+        info.elementStartIndex = elementGlobalIndex;
         for (int i = 0; i < element_list.size(); ++i) {
             auto element = element_list[i];
-            elementLocalToGlobal[element.label()] = elementGlobalIndex;
+            info.elementLabelToIndex[element.label()] = elementGlobalIndex;
 
             int nNodes = 0;
             const int* const conn = element.connectivity(nNodes);
             std::vector<std::size_t> globalConn;
             globalConn.resize(nNodes);
             for (int j = 0; j < nNodes; ++j) {
-                auto it = nodeLocalToGlobal.find(conn[j]);
-                if (it != nodeLocalToGlobal.end()) {
+                auto it = info.nodeLabelToIndex.find(conn[j]);
+                if (it != info.nodeLabelToIndex.end()) {
                     globalConn[j] = it->second;
                 } else {
-                    std::cerr << "[Error] Node label " << conn[j] << " not found in instance " << inst_name << std::endl;
+                    std::cerr << "[Error] Node label " << conn[j] << " not found in instance " << info.name << std::endl;
                     globalConn[j] = 0; // 使用默认值
                 }
             }
             m_elementsConn.emplace_back(std::move(globalConn));
             m_elementTypes.emplace_back(element.type().CStr());
-            // 全局标签到索引映射（O(1) 查找），记录重复标签
-            auto [ei, insertedE] = m_elemLabelToGlobalIdx.emplace(element.label(), elementGlobalIndex);
-            if (!insertedE && ei->second != elementGlobalIndex) {
-                m_elemDuplicateLabels.insert(element.label());
-            }
             ++elementGlobalIndex;
         }
-    }
+        info.elementCount = static_cast<std::size_t>(element_list.size());
 
-    // 更新总数
+        m_instanceInfos.emplace_back(std::move(info));
+    }
     m_nodesNum = nodeGlobalIndex;
     m_elementsNum = elementGlobalIndex;
-
-    if (!m_nodeDuplicateLabels.empty()) {
-        std::cerr << "[Warning] Duplicate node labels detected across instances. Count="
-                  << m_nodeDuplicateLabels.size() << std::endl;
-    }
-    if (!m_elemDuplicateLabels.empty()) {
-        std::cerr << "[Warning] Duplicate element labels detected across instances. Count="
-                  << m_elemDuplicateLabels.size() << std::endl;
-    }
 }
 
 //读取所有可用的step和frame信息
@@ -119,7 +92,6 @@ void readOdb::readStepFrameInfo()
         const odb_Step& step = stepIter.currentValue();
         std::string stepName = step.name().cStr();
 
-        //遍历所有frame
         const odb_SequenceFrame& allFramesInStep = step.frames();
         int numFrames = allFramesInStep.size();
         for (int frameIdx = 0; frameIdx < numFrames; ++frameIdx) {
@@ -153,11 +125,11 @@ void readOdb::readDisplacementField(const odb_FieldOutput& fieldOutput)
         fieldData.componentLabels.push_back(componentLabels[i].cStr());
     }
     fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
-    extractFieldValues2(fieldOutput, fieldData);
-    m_fieldDataMap["U"] = fieldData;
+    extractFieldData(fieldOutput, fieldData);
+    m_fieldDataMap["U"] = std::move(fieldData);
 
     std::cout << "[Info] Read displacement field with " << m_nodesNum
-              << " nodes, " << fieldData.components << " components." << std::endl;
+              << " nodes, " << m_fieldDataMap["U"].components << " components." << std::endl;
 }
 
 void readOdb::readRotationField(const odb_FieldOutput& fieldOutput)
@@ -173,11 +145,11 @@ void readOdb::readRotationField(const odb_FieldOutput& fieldOutput)
         fieldData.componentLabels.push_back(componentLabels[i].cStr());
     }
     fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
-    extractFieldValues2(fieldOutput, fieldData);
-    m_fieldDataMap["UR"] = fieldData;
+    extractFieldData(fieldOutput, fieldData);
+    m_fieldDataMap["UR"] = std::move(fieldData);
 
     std::cout << "[Info] Read rotation field with " << m_nodesNum
-              << " nodes, " << fieldData.components << " components." << std::endl;
+              << " nodes, " << m_fieldDataMap["UR"].components << " components." << std::endl;
 }
 
 void readOdb::readStressField(const odb_FieldOutput& fieldOutput)
@@ -193,103 +165,113 @@ void readOdb::readStressField(const odb_FieldOutput& fieldOutput)
         fieldData.componentLabels.push_back(componentLabels[i].cStr());
     }
     fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
-    extractFieldValues2(fieldOutput, fieldData);
-    m_fieldDataMap["S"] = fieldData;
+    extractFieldData(fieldOutput, fieldData);
+    m_fieldDataMap["S"] = std::move(fieldData);
 
     std::cout << "[Info] Read stress field with " << m_elementsNum
-              << " elements, " << fieldData.components << " components." << std::endl;
+              << " elements, " << m_fieldDataMap["S"].components << " components." << std::endl;
 }
 
-void readOdb::extractFieldValues2(const odb_FieldOutput& fieldOutput, FieldData& fieldData)
+void readOdb::extractFieldData(const odb_FieldOutput& fieldOutput, FieldData& fieldData)
 {
-    try {
-        const odb_SequenceFieldBulkData& bulkDataBlocks = fieldOutput.bulkDataBlocks();
-        int numBlocks = bulkDataBlocks.size();
-        int numComponents = fieldOutput.componentLabels().size();
-        fieldData.components = numComponents;
+    const odb_SequenceFieldBulkData& bulkDataBlocks = fieldOutput.bulkDataBlocks();
+    int numBlocks = bulkDataBlocks.size();
+    int numComponents = fieldData.components;
 
-        // 根据场输出位置确定是节点数据还是单元数据
-        odb_Enum::odb_ResultPositionEnum position = fieldOutput.locations()[0].position();
-        bool isNodalData = (position == odb_Enum::NODAL);
+    // 根据场输出位置确定是节点数据还是单元数据
+    bool isNodalData = false;
+    odb_Enum::odb_ResultPositionEnum position = fieldOutput.locations()[0].position();
+    if (position == odb_Enum::NODAL) {
+        isNodalData = true;
+    }
+    else {
+        //这里简单处理，默认非节点位置均为单元数据
+        isNodalData = false;
+    }
+    fieldData.isNodal = isNodalData;
 
-        if (isNodalData) {
-            fieldData.nodeValues.assign(m_nodesNum * numComponents, 0.0f);
-            fieldData.nodeValidFlags.assign(m_nodesNum, 0);
+    if (isNodalData) {
+        fieldData.values.assign(m_nodesNum * numComponents, 0.0f);
+        fieldData.validFlags.assign(m_nodesNum, 0);
 
-            for (int iblock = 0; iblock < numBlocks; iblock++) {
-                const odb_FieldBulkData& bulkData = bulkDataBlocks[iblock];
-                int numNodes = bulkData.length();        // 节点数量
-                int numComp = bulkData.width();          // 组件数量
-                float* data = bulkData.data();           // 数据数组
-                int* nodeLabels = bulkData.nodeLabels(); // 节点标签数组
+        for (int iblock = 0; iblock < numBlocks; iblock++) {
+            const odb_FieldBulkData& bulkData = bulkDataBlocks[iblock];
+            int numNodes = bulkData.length();        // 节点数量
+            int numComp = bulkData.width();          // 组件数量
+            float* data = bulkData.data();           // 数据数组
+            int* nodeLabels = bulkData.nodeLabels(); // 节点标签数组
 
-                int pos = 0;
-                for (int node = 0; node < numNodes; node++) {
-                    int nodeLabel = nodeLabels[node];
-                    std::size_t globalIdx = mapFieldDataToGlobalIndices(nodeLabel, true);
-                    if (globalIdx < m_nodesNum) {
-                        const std::size_t base = globalIdx * numComponents;
-                        for (int comp = 0; comp < numComp; comp++) {
-                            fieldData.nodeValues[base + comp] = data[pos++];
-                        }
-                        fieldData.nodeValidFlags[globalIdx] = 1;
-                    } else {
-                        pos += numComp; // 跳过无效节点的数据
+            int pos = 0;
+            for (int node = 0; node < numNodes; node++) {
+                int nodeLabel = nodeLabels[node];
+                // 未区分实例时，遍历所有实例查找
+                std::size_t globalIdx = findGlobalIndex("", nodeLabel, true);
+                if (globalIdx < m_nodesNum) {
+                    const std::size_t base = globalIdx * numComponents;
+                    for (int comp = 0; comp < numComp; comp++) {
+                        fieldData.values[base + comp] = data[pos++];
                     }
-                }
-            }
-        } else {
-            fieldData.elementValues.assign(m_elementsNum * numComponents, 0.0f);
-            fieldData.elementValidFlags.assign(m_elementsNum, 0);
-
-            for (int jblock = 0; jblock < numBlocks; jblock++) {
-                const odb_FieldBulkData& bulkData = bulkDataBlocks[jblock];
-                int numValues = bulkData.length();           // 总输出位置数
-                int numComp = bulkData.width();              // 组件数量
-                float* data = bulkData.data();               // 数据数组
-                int nElems = bulkData.numberOfElements();    // 单元数量
-                int* elementLabels = bulkData.elementLabels(); // 单元标签数组
-
-                int numIP = (nElems > 0) ? numValues / nElems : 1; // 每单元积分点数
-                int dataPosition = 0;
-                // 尝试获取积分点信息（可选，不使用）
-                //try { (void)bulkData.integrationPoints(); } catch (...) {}
-
-                for (int elem = 0; elem < nElems; elem++) {
-                    int elementLabel = elementLabels[elem];
-                    std::size_t globalIdx = mapFieldDataToGlobalIndices(elementLabel, false);
-                    if (globalIdx < m_elementsNum) {
-                        const std::size_t base = globalIdx * numComponents;
-                        // 取第一个积分点的值
-                        for (int comp = 0; comp < numComp; comp++) {
-                            fieldData.elementValues[base + comp] = data[dataPosition + comp];
-                        }
-                        fieldData.elementValidFlags[globalIdx] = 1;
-                    }
-                    dataPosition += numIP * numComp; // 跳过该单元其他积分点
+                    fieldData.validFlags[globalIdx] = 1;
+                } else {
+                    pos += numComp; // 跳过无效节点的数据
                 }
             }
         }
+    } 
+    else {
+        fieldData.values.assign(m_elementsNum * numComponents, 0.0f);
+        fieldData.validFlags.assign(m_elementsNum, 0);
 
-        std::cout << "[Info] Bulk data extraction completed. Processed " << numBlocks
-                  << " blocks with " << numComponents << " components." << std::endl;
+        for (int jblock = 0; jblock < numBlocks; jblock++) {
+            const odb_FieldBulkData& bulkData = bulkDataBlocks[jblock];
+            int numValues = bulkData.length();           // 总输出位置数
+            int numComp = bulkData.width();              // 组件数量
+            float* data = bulkData.data();               // 数据数组
+            int nElems = bulkData.numberOfElements();    // 单元数量
+            int* elementLabels = bulkData.elementLabels(); // 单元标签数组
+
+            int numIP = (nElems > 0) ? numValues / nElems : 1; // 每单元积分点数
+            int dataPosition = 0;
+
+            for (int elem = 0; elem < nElems; elem++) {
+                int elementLabel = elementLabels[elem];
+                std::size_t globalIdx = findGlobalIndex("", elementLabel, false);
+                if (globalIdx < m_elementsNum) {
+                    const std::size_t base = globalIdx * numComponents;
+                    // 取第一个积分点的值
+                    for (int comp = 0; comp < numComp; comp++) {
+                        fieldData.values[base + comp] = data[dataPosition + comp];
+                    }
+                    fieldData.validFlags[globalIdx] = 1;
+                }
+                dataPosition += numIP * numComp; // 跳过该单元其他积分点
+            }
+        }
     }
-    catch (const std::exception& e) {
-        std::cerr << "[Error] Failed to extract field values using bulk data: " << e.what() << std::endl;
-    }
+
+    std::cout << "[Info] Bulk data extraction completed. Processed " << numBlocks
+              << " blocks with " << numComponents << " components." << std::endl;
 }
 
-std::size_t readOdb::mapFieldDataToGlobalIndices(int label, bool isNode)
+std::size_t readOdb::findGlobalIndex(const std::string& instanceName, int label, bool isNode)
 {
-    // 若存在重复标签，返回首次构建时索引并在 constructMap() 统一告警
-    if (isNode) {
-        auto it = m_nodeLabelToGlobalIdx.find(label);
-        if (it != m_nodeLabelToGlobalIdx.end()) return it->second;
-    } else {
-        auto it = m_elemLabelToGlobalIdx.find(label);
-        if (it != m_elemLabelToGlobalIdx.end()) return it->second;
+    // 如提供实例名，优先在该实例查找；否则遍历所有实例
+    if (!instanceName.empty()) {
+        for (const auto& info : m_instanceInfos) {
+            if (info.name == instanceName) {
+                const auto& mapRef = isNode ? info.nodeLabelToIndex : info.elementLabelToIndex;
+                auto it = mapRef.find(label);
+                if (it != mapRef.end()) return it->second;
+                break;
+            }
+        }
     }
-    return SIZE_MAX; // 未找到时返回最大值
+    for (const auto& info : m_instanceInfos) {
+        const auto& mapRef = isNode ? info.nodeLabelToIndex : info.elementLabelToIndex;
+        auto it = mapRef.find(label);
+        if (it != mapRef.end()) return it->second;
+    }
+    return SIZE_MAX;
 }
 
 bool readOdb::readAllFields(const std::string& stepName, int frameIndex)
@@ -406,6 +388,7 @@ bool readOdb::readSingleField(const std::string& stepName, int frameIndex, const
 void readOdb::readGenericField(const odb_FieldOutput& fieldOutput, const std::string& name)
 {
     FieldData fieldData;
+    fieldData.type = FieldType::GENERIC;
     fieldData.name = name;
     fieldData.description = fieldOutput.description().cStr();
 
@@ -416,21 +399,7 @@ void readOdb::readGenericField(const odb_FieldOutput& fieldOutput, const std::st
     }
     fieldData.components = static_cast<int>(fieldOutput.componentLabels().size());
 
-    extractFieldValues2(fieldOutput, fieldData);
-
-    // 根据位置选择类型，用于后续显示渠道（使用 locations() 序列）
-    bool isNodal = false;
-    try {
-        const auto& locs = fieldOutput.locations();
-        if (locs.size() > 0) {
-            const auto pos = locs[0].position();
-            isNodal = (pos == odb_Enum::NODAL);
-        }
-    } catch (...) {
-        // 若 API 不支持或发生异常，则保持默认 false
-    }
-    fieldData.type = isNodal ? FieldType::DISPLACEMENT : FieldType::STRESS;
-
+    extractFieldData(fieldOutput, fieldData);
     m_fieldDataMap[name] = std::move(fieldData);
 }
 
@@ -467,6 +436,14 @@ void readOdb::releaseGeometryCache()
     std::cout << "[Info] Released geometry caches: nodesCoord, elementsConn, elementTypes." << std::endl;
 }
 
+void readOdb::reloadGeometryCache()
+{
+    // 重新初始化几何数据（节点坐标、单元连通性、单元类型）
+    initializeGeometry();
+    std::cout << "[Info] Reloaded geometry caches: nodesCoord, elementsConn, elementTypes." << std::endl;
+}
+
+//字段名与该字段的组件标签列表（例如 {"U", {"U1","U2","U3"}} ）
 std::vector<std::pair<std::string, std::vector<std::string>>>
 readOdb::listFieldNames(const std::string& stepName, int frameIndex) const
 {
@@ -527,6 +504,15 @@ readOdb::listFieldNames(const std::string& stepName, int frameIndex) const
             }
         }
     }
-
     return result;
+}
+
+std::vector<std::string> readOdb::getLoadedFieldNames() const
+{
+    std::vector<std::string> names;
+    names.reserve(m_fieldDataMap.size());
+    for (const auto& kv : m_fieldDataMap) {
+        names.emplace_back(kv.first);
+    }
+    return names;
 }

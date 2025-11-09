@@ -1,6 +1,4 @@
 #include "vtkdisplay.h"
-#include <vtkArrayCalculator.h>
-#include <vtkDataSet.h>
 
 VTKDisplayManager::VTKDisplayManager()
 {

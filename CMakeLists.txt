@@ -220,6 +220,14 @@ endif()
 
 set_source_files_properties(odbmanager.cpp PROPERTIES COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/permissive>")
 
+# Ensure INT64_MAX and related C limit macros are available across all TUs.
+target_compile_definitions(odbViewer
+    PRIVATE
+        __STDC_LIMIT_MACROS
+        __STDC_CONSTANT_MACROS
+        INT64_MAX=9223372036854775807LL
+)
+
 target_link_libraries(odbViewer
     PRIVATE
         Qt::Core

@@ -106,8 +106,8 @@ void MainWindow::buildModelTree()
         return;
 
     //实例
-    for (const auto& instName : m_odb->m_instanceNames) {
-        QStandardItem* instItem = new QStandardItem(QString::fromStdString(instName));
+    for (const auto& info : m_odb->getInstanceInfos()) {
+        QStandardItem* instItem = new QStandardItem(QString::fromStdString(info.name));
         instancesRoot->appendRow(instItem);
     }
 
@@ -170,7 +170,12 @@ void MainWindow::onTreeItemActivated(const QModelIndex& index)
         const int frameIndex = item->data(Qt::UserRole + 1).toInt();
         const QString stepName = item->data(Qt::UserRole + 2).toString();
         if (!stepName.isEmpty()) {
-            m_selectedStepFrame = StepFrameInfo(stepName.toStdString(), frameIndex, 0.0, item->text().toStdString());
+            StepFrameInfo sf;
+            sf.stepName = stepName.toStdString();
+            sf.frameIndex = frameIndex;
+            sf.frameValue = 0.0;
+            sf.description = item->text().toStdString();
+            m_selectedStepFrame = sf;
             ui->statusBar->showMessage(tr("当前帧: %1 / %2").arg(stepName).arg(frameIndex), 3000);
         }
         return;
@@ -194,26 +199,18 @@ void MainWindow::onTreeItemActivated(const QModelIndex& index)
         try {
             // 按需读取：只读取用户选择的场变量，减少内存占用
             m_odb->readSingleField(sf.stepName, sf.frameIndex, fieldName.toStdString());
-            auto it = m_odb->m_fieldDataMap.find(fieldName.toStdString());
-            if (it == m_odb->m_fieldDataMap.end()) {
+            const FieldData* fdPtr = m_odb->getFieldData(fieldName.toStdString());
+            if (!fdPtr) {
                 QMessageBox::warning(this, tr("Warning"), tr("字段 %1 不存在于当前帧").arg(fieldName));
                 return;
             }
             if (!m_gridBuilder) {
                 m_gridBuilder = std::make_unique<CreateVTKUnstucturedGrid>(*m_odb);
             }
-            FieldData& fd = it->second;
+            const FieldData& fd = *fdPtr;
             if (!m_gridBuilder->addFieldData(fd)) {
                 QMessageBox::warning(this, tr("Warning"), tr("添加字段失败: %1").arg(fieldName));
                 return;
-            }
-            // 视图激活后，减少双驻留：清理 FieldData 的值缓存
-            if (fd.type == FieldType::DISPLACEMENT || fd.type == FieldType::ROTATION) {
-                std::vector<float>().swap(fd.nodeValues);
-                std::vector<uint8_t>().swap(fd.nodeValidFlags);
-            } else if (fd.type == FieldType::STRESS) {
-                std::vector<float>().swap(fd.elementValues);
-                std::vector<uint8_t>().swap(fd.elementValidFlags);
             }
 
             // 对 U/UR 计算模长并显示
@@ -259,12 +256,28 @@ void MainWindow::saveFile()
     }
 
     try {
+        // 保存前确保几何缓存已加载（openFile 中可能释放过几何缓存以降低内存占用）
+        m_odb->reloadGeometryCache();
+
         CreateVTKUnstucturedGrid grid(*m_odb);
 
+        // 保存时读取当前选中帧的所有场数据
+        StepFrameInfo sf = m_selectedStepFrame;
+        const auto frames = m_odb->getAvailableStepsFrames();
+        if (sf.stepName.empty() && !frames.empty()) {
+            sf = frames.front();
+        }
+        if (!sf.stepName.empty()) {
+            m_odb->readFieldOutput(sf.stepName, sf.frameIndex);
+        }
+
         // 若当前已读取某帧场数据，则将所有可用场变量写入
-        if (!m_odb->m_fieldDataMap.empty()) {
-            for (auto& kv : m_odb->m_fieldDataMap) {
-                FieldData& fd = kv.second;
+        auto loadedNames = m_odb->getLoadedFieldNames();
+        if (!loadedNames.empty()) {
+            for (const auto& name : loadedNames) {
+                const FieldData* fdPtr = m_odb->getFieldData(name);
+                if (!fdPtr) continue;
+                const FieldData& fd = *fdPtr;
                 if (fd.type == FieldType::STRESS) {
                     // 写入应力张量并计算/输出 Mises
                     grid.addStressField(fd, "ALL");

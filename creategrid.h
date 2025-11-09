@@ -6,7 +6,6 @@
 #include <vtkPoints.h>
 #include <vtkCellArray.h>
 #include <vtkXMLUnstructuredGridWriter.h>
-#include <vtkIntArray.h>
 #include <vtkFloatArray.h>
 #include <vtkPointData.h>
 #include <vtkCellData.h>
@@ -16,31 +15,24 @@
 class CreateVTKUnstucturedGrid {
 public:
     explicit CreateVTKUnstucturedGrid(const readOdb& odb);
-
-    void addPointScalar(const std::string& name, const std::vector<float>& values);
-
     void addCellScalar(const std::string& name, const std::vector<float>& values);
-    void addCellScalar(const std::string& name, const std::vector<int>& values);
 
     bool writeToFile(const std::string& filename) const;
 
-    bool addFieldData(FieldData& fieldData);
-
-    bool addDisplacementField(FieldData& fieldData, double scaleFactor = 1.0);
-
-    bool addStressField(FieldData& fieldData, const std::string& component = "ALL");
-
+    bool addFieldData(const FieldData& fieldData);
+    bool addDisplacementField(const FieldData& fieldData, double scaleFactor = 1.0);
+    bool addStressField(const FieldData& fieldData, const std::string& component = "ALL");
     void calculateVonMisesStress(const FieldData& stressField);
 
     vtkUnstructuredGrid* getGrid() const { return m_grid.Get(); }
 private:
-    static int abaqusToVTKCellType(const std::string& abaqusType);
-
-    void buildGeometry();
-    void applyDisplacement(const FieldData& displacementField, double scaleFactor);
-
     const readOdb& m_odb;
     vtkSmartPointer<vtkUnstructuredGrid> m_grid;
-};
 
+    void buildGeometry();
+    static int abaqusToVTKCellType(const std::string& abaqusType);
+    void applyDisplacement(const FieldData& displacementField, double scaleFactor);
+    vtkSmartPointer<vtkFloatArray> makeFloatArray(const std::string& name, int numComponents,
+        std::size_t tupleCount, const std::vector<float>& values, const std::vector<uint8_t>& validFlags);
+};
 #endif // CREATEGRID_H

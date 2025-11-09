@@ -22,6 +22,8 @@
 #include <vtkColorTransferFunction.h>
 #include <vtkTextProperty.h>
 #include <vtkDataArray.h>
+#include <vtkArrayCalculator.h>
+#include <vtkDataSet.h>
 
 #include "odbmanager.h"
 #include "creategrid.h"
