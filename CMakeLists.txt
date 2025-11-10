@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
 
-# 如果支持，请为 MSVC 编译器启用热重载。
 if(POLICY CMP0141)
   cmake_policy(SET CMP0141 NEW)
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
@@ -11,8 +10,6 @@ add_compile_options(/EHsc)
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets)
 
-# ==================== VTK 配置 ====================
-set(VTK_DIR "E:\\cppenv\\VTK\\VTK_install\\VTK-9.5.2\\Debug\\lib\\cmake\\vtk-9.5")
 find_package(VTK REQUIRED COMPONENTS
     CommonCore
     CommonDataModel
@@ -26,17 +23,13 @@ find_package(VTK REQUIRED COMPONENTS
     RenderingAnnotation
 )
 
-# ==================== Abaqus ODB C++ API 配置 ====================
-# include 目录
 include_directories(
     "D:/SIMULIA2/EstProducts/2022/win_b64/code/include"
     "D:/SIMULIA2/EstProducts/2022"
 )
 
-# 库目录
 link_directories("D:/SIMULIA2/EstProducts/2022/win_b64/code/lib")
 
-# 需要链接的库
 set(ABAQUS_LIBS
     ABQDMP_Core.lib
     ABQSMAAbuBasicUtils.lib
@@ -191,9 +184,6 @@ set(ABAQUS_LIBS
     SystemTSUUID.lib
     SystemUUID.lib
 )
-
-# ==================== Qt + VTK 配置 ====================
-
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
@@ -213,20 +203,11 @@ qt_add_executable(odbViewer
     toolicons.qrc
 )
 
-# 设置 C++ 标准
 if(CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET odbViewer PROPERTY CXX_STANDARD 17)
 endif()
 
 set_source_files_properties(odbmanager.cpp PROPERTIES COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/permissive>")
-
-# Ensure INT64_MAX and related C limit macros are available across all TUs.
-target_compile_definitions(odbViewer
-    PRIVATE
-        __STDC_LIMIT_MACROS
-        __STDC_CONSTANT_MACROS
-        INT64_MAX=9223372036854775807LL
-)
 
 target_link_libraries(odbViewer
     PRIVATE
