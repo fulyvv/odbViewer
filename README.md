@@ -6,7 +6,7 @@
 - 编译提示：Abaqus ODB API 头文件在 MSVC 的标准严格模式（`/permissive-`）下兼容性较差，可能出现大量语法或模板相关错误。请为 `odbmanager.h/cpp` 保持编译器的宽松模式以确保正常编译。
 
 ## 项目介绍
-本项目基于 Qt 6.5 和 VTK 9.5 开发，支持 Abaqus ODB 文件的后处理查看。目前该项目完成了以下功能：
+本项目基于 Qt 6.9 和 VTK 9.5 开发，支持 Abaqus ODB 文件的后处理查看。目前该项目完成了以下功能：
 
 - 打开 Abaqus ODB 文件并显示基础几何（面/线框）
 - 加载场变量（U/UR/S），按需显示云图与色标
@@ -31,8 +31,8 @@
 
 ## 环境要求
 - 操作系统：Windows（MSVC/Visual Studio 2022）
-- 必需：CMake ≥ 3.19、Qt 6.5（Core、Widgets）、VTK 9.5
-注意：Abaqus为商业软件，在开始读取读取ODB文件之前，请确保已安装Abaqus 2022并配置好环境变量。
+- 必需：CMake ≥ 3.19、Qt 6.9（Core、Widgets）、VTK 9.5
+- 注意：Abaqus为商业软件，在开始读取读取ODB文件之前，请确保已安装Abaqus 2022并配置好环境变量。
 
 
 ## 使用说明
@@ -41,11 +41,11 @@
 - 显示规则：
   - 位移/旋转（U/UR）默认计算点模长并着色
   - 应力（S）当前默认显示张量的第一个分量
-- 导出：菜单“Save”将当前帧的已加载场数据写出为 `*.vtu`（包含 Von Mises 计算结果）
+- 导出：菜单“Save”将当前帧的已加载场数据写出为 `*.vtu`
 
-![打开功能](./images/open.png)
+![打开功能](./images/open.gif)
 
-![导出功能](./images/export.png)
+![导出功能](./images/export.gif)
 
 
 
