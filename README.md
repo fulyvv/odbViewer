@@ -45,7 +45,7 @@
 
 ![打开功能](./images/open.gif)
 
-![导出功能](./images/export.gif)
+![导出功能](./images/save.gif)
 
 
 
