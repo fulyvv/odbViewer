@@ -1,12 +1,6 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-#include <QVTKOpenGLNativeWidget.h>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QStandardItemModel>
-#include <QStandardItem>
-#include <map>
 #include <vtkRenderer.h>
 #include <vtkRenderWindow.h>
 #include <vtkSmartPointer.h>
@@ -21,7 +15,6 @@ MainWindow::MainWindow(QWidget *parent)
     ui->vtkWidget->setRenderWindow(m_vtkDisplay.getRenderWindow());
     m_vtkDisplay.setInteractor(ui->vtkWidget->interactor());
 
-    // 将交互样式设置为轨迹球相机，确保良好交互体验
     auto style = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
     ui->vtkWidget->interactor()->SetInteractorStyle(style);
 
@@ -59,14 +52,11 @@ void MainWindow::openFile() {
 
     try {
         m_gridBuilder = std::make_unique<CreateVTKUnstucturedGrid>(*m_odb);
-        // 先显示基础几何
         m_vtkDisplay.displaySolid(m_gridBuilder->getGrid());
         m_vtkDisplay.setCameraView();
         m_vtkDisplay.addAxes();
 
-        // 构建完成后释放 readOdb 中的几何缓存，保留索引映射
         m_odb->releaseGeometryCache();
-
         // 打开时不读取 U/UR/S，按需加载
         const auto frames = m_odb->getAvailableStepsFrames();
         if (!frames.empty()) {
@@ -76,7 +66,6 @@ void MainWindow::openFile() {
         m_vtkDisplay.getRenderWindow()->Render();
         ui->statusBar->showMessage(tr("Successfully opened ODB file: %1").arg(fileName), 5000);
 
-        // 构建左侧模型树（实例、步/帧、可用场变量）
         buildModelTree();
     }
     catch (const std::exception& e) {
@@ -93,7 +82,7 @@ void MainWindow::buildModelTree()
     m_treeModel->setColumnCount(1);
     m_treeModel->setHorizontalHeaderLabels({tr("模型")});
 
-    // 顶层分类节点
+    // 顶层
     QStandardItem* instancesRoot = new QStandardItem(tr("实例"));
     QStandardItem* stepsRoot = new QStandardItem(tr("步与帧"));
     QStandardItem* fieldsRoot = new QStandardItem(tr("场变量"));
@@ -121,8 +110,7 @@ void MainWindow::buildModelTree()
         QStandardItem* stepItem = new QStandardItem(stepName);
         stepsRoot->appendRow(stepItem);
         for (const auto& sf : vec) {
-            QString frameText = tr("帧 %1 (id=%2, value=%3)")
-                                    .arg(QString::fromStdString(sf.description))
+            QString frameText = tr("Frame %1, Time %2")
                                     .arg(sf.frameIndex)
                                     .arg(sf.frameValue);
             QStandardItem* frameItem = new QStandardItem(frameText);
@@ -182,7 +170,7 @@ void MainWindow::onTreeItemActivated(const QModelIndex& index)
     }
 
     if (rootName == tr("场变量")) {
-        // 选择场：读取并显示（懒加载）
+        // 选择场
         QString fieldName = item->data(Qt::UserRole + 1).toString();
         if (fieldName.isEmpty() && item->parent()) {
             fieldName = item->parent()->data(Qt::UserRole + 1).toString();
@@ -219,7 +207,7 @@ void MainWindow::onTreeItemActivated(const QModelIndex& index)
                 m_vtkDisplay.addPointVectorMagnitude(m_gridBuilder->getGrid(), fieldName.toStdString(), magName.toStdString());
                 m_vtkDisplay.displayWithScalarField(m_gridBuilder->getGrid(), magName.toStdString(), true);
             } else if (fd.type == FieldType::STRESS) {
-                // 默认显示张量第一个分量；后续可添加组件选择或 Mises
+                // 默认显示张量第一个分量
                 m_vtkDisplay.displayWithScalarField(m_gridBuilder->getGrid(), fieldName.toStdString(), false);
             }
 
@@ -239,58 +227,26 @@ void MainWindow::saveFile()
         return;
     }
 
-    // 默认保存到 ODB 同目录，文件名同名 .vtu
     QString defaultPath = QString::fromStdString(m_odb->getOdbPath());
     QString defaultName = QString::fromStdString(m_odb->getOdbBaseName()) + ".vtu";
     QString defaultFull = defaultPath + "/" + defaultName;
 
-    QString fileName = QFileDialog::getSaveFileName(
-        this,
-        tr("Save VTU"),
-        defaultFull,
-        tr("VTK Unstructured Grid (*.vtu)")
-        );
+    QString fileName = QFileDialog::getSaveFileName(this, tr("Save VTU"), defaultFull, 
+        tr("VTK Unstructured Grid (*.vtu)"));
 
     if (fileName.isEmpty()) {
         return;
     }
 
     try {
-        // 保存前确保几何缓存已加载（openFile 中可能释放过几何缓存以降低内存占用）
-        m_odb->reloadGeometryCache();
-
-        CreateVTKUnstucturedGrid grid(*m_odb);
-
-        // 保存时读取当前选中帧的所有场数据
-        StepFrameInfo sf = m_selectedStepFrame;
-        const auto frames = m_odb->getAvailableStepsFrames();
-        if (sf.stepName.empty() && !frames.empty()) {
-            sf = frames.front();
-        }
-        if (!sf.stepName.empty()) {
-            m_odb->readFieldOutput(sf.stepName, sf.frameIndex);
+        if (!m_gridBuilder || !m_gridBuilder->getGrid()) {
+            throw std::runtime_error("Grid is not available to save");
         }
 
-        // 若当前已读取某帧场数据，则将所有可用场变量写入
-        auto loadedNames = m_odb->getLoadedFieldNames();
-        if (!loadedNames.empty()) {
-            for (const auto& name : loadedNames) {
-                const FieldData* fdPtr = m_odb->getFieldData(name);
-                if (!fdPtr) continue;
-                const FieldData& fd = *fdPtr;
-                if (fd.type == FieldType::STRESS) {
-                    // 写入应力张量并计算/输出 Mises
-                    grid.addStressField(fd, "ALL");
-                } else {
-                    // 位移/旋转作为多分量点数据写入（不应用形变）
-                    grid.addFieldData(fd);
-                }
-            }
-        }
-
-        if (!grid.writeToFile(fileName.toStdString())) {
+        if (!m_gridBuilder->writeToFile(fileName.toStdString())) {
             throw std::runtime_error("Failed to write VTU file");
         }
+
         ui->statusBar->showMessage(tr("Saved VTU: %1").arg(fileName), 5000);
     }
     catch (const std::exception& e) {

@@ -436,13 +436,6 @@ void readOdb::releaseGeometryCache()
     std::cout << "[Info] Released geometry caches: nodesCoord, elementsConn, elementTypes." << std::endl;
 }
 
-void readOdb::reloadGeometryCache()
-{
-    // 重新初始化几何数据（节点坐标、单元连通性、单元类型）
-    initializeGeometry();
-    std::cout << "[Info] Reloaded geometry caches: nodesCoord, elementsConn, elementTypes." << std::endl;
-}
-
 //字段名与该字段的组件标签列表（例如 {"U", {"U1","U2","U3"}} ）
 std::vector<std::pair<std::string, std::vector<std::string>>>
 readOdb::listFieldNames(const std::string& stepName, int frameIndex) const

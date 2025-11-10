@@ -35,31 +35,19 @@ class VTKDisplayManager
 public:
     VTKDisplayManager();
 
-    // 显示网格（线框模式）
     void displayWireframe(vtkUnstructuredGrid* grid);
-
     void displaySolid(vtkUnstructuredGrid* grid);
 
-    // 显示带标量场的网格（彩色云图）
     void displayWithScalarField(vtkUnstructuredGrid* grid, const std::string& scalarName, bool usePointData);
-
-    // 统一入口：激活并显示标量场（包含存在性与范围校验、查找表与色标更新）
     bool setActiveScalar(vtkUnstructuredGrid* grid, const std::string& name, bool usePointData);
 
-    // 使用VTK管线计算点矢量模长并添加到grid
     bool addPointVectorMagnitude(vtkUnstructuredGrid* grid, const std::string& vectorName, const std::string& outputName);
-
-    // 添加坐标轴
     void addAxes();
-
-    // 设置相机视角
     void setCameraView();
-
-    // 开始显示
     void start();
 
+public:
     void setInteractor(vtkRenderWindowInteractor* interactor);
-
     vtkGenericOpenGLRenderWindow* getRenderWindow() const { return renderWindow.Get(); }
     vtkRenderer* getRenderer() const { return renderer.Get(); }
     vtkRenderWindowInteractor* getRenderWindowInteractor() const { return renderWindowInteractor.Get(); }

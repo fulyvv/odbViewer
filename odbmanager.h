@@ -81,8 +81,6 @@ public:
     const std::string& getOdbFullName() const;
     
     void releaseGeometryCache();
-    // 重新加载/重建几何缓存，用于在释放后需要再次构建VTK网格的场景
-    void reloadGeometryCache();
 
 public:
     std::size_t m_nodesNum{0};

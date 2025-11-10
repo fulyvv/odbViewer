@@ -3,6 +3,12 @@
 
 #include <QMainWindow>
 #include <QStandardItemModel>
+#include <QStandardItem>
+#include <QVTKOpenGLNativeWidget.h>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QStandardItemModel>
+#include <map>
 #include <memory>
 #include "vtkdisplay.h"
 #include "odbmanager.h"
@@ -28,16 +34,15 @@ private slots:
     void onTreeItemActivated(const QModelIndex& index);
 
 private:
+    void buildModelTree();
+
+private:
     Ui::MainWindow *ui;
 
 	VTKDisplayManager m_vtkDisplay;
 	std::unique_ptr<readOdb> m_odb;
-
     std::unique_ptr<CreateVTKUnstucturedGrid> m_gridBuilder;
     StepFrameInfo m_selectedStepFrame;
-
-    // 模型树
     QStandardItemModel* m_treeModel{nullptr};
-    void buildModelTree();
 };
 #endif // MAINWINDOW_H
