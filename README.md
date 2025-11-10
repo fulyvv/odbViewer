@@ -1,7 +1,9 @@
 # ODBViewer
 
 ## 声明
-本项目为作者个人学习项目，不保证稳定性与功能性。如果您需要对ODB文件进行可视化操作，建议您使用HyperView等专业软件，或者使用[odb2vtk](https://github.com/Arris-Composites/ODB2VTK)脚本将ODB文件转换为VTK格式后使用ParaView等软件进行可视化操作。
+- 本项目为作者个人学习项目，不保证稳定性与功能性。如果您需要对ODB文件进行可视化操作，建议您使用HyperView等专业软件，或者使用[odb2vtk](https://github.com/Arris-Composites/ODB2VTK)脚本将ODB文件转换为VTK格式后使用ParaView等软件进行可视化操作。
+
+- 编译提示：Abaqus ODB API 头文件在 MSVC 的标准严格模式（`/permissive-`）下兼容性较差，可能出现大量语法或模板相关错误。请为 `odbmanager.h/cpp` 保持编译器的宽松模式以确保正常编译。
 
 ## 项目介绍
 本项目基于 Qt 6.5 和 VTK 9.5 开发，支持 Abaqus ODB 文件的后处理查看。目前该项目完成了以下功能：
@@ -38,8 +40,8 @@
 - 浏览数据：左侧树包含“实例”“步与帧”“场变量”，点击帧（需要按下Enter键）可切换当前帧；点击场变量（需要按下Enter键）可加载并显示云图
 - 显示规则：
   - 位移/旋转（U/UR）默认计算点模长并着色
-  - 应力（S）当前默认显示张量的第一个分量（VTK 对多分量数组会选第 0 分量着色）
-- 导出：菜单“Save VTU”将当前帧的已加载场数据写出为 `*.vtu`（包含 Von Mises 计算结果）
+  - 应力（S）当前默认显示张量的第一个分量
+- 导出：菜单“Save”将当前帧的已加载场数据写出为 `*.vtu`（包含 Von Mises 计算结果）
 
 ![打开功能](./images/open.png)
 
@@ -47,7 +49,7 @@
 
 
 
-## 示例数据与体量文件
+## 示例数据
 本仓库包含一个test.odb文件，您可以使用该文件进行测试
 
 ## 已知问题
