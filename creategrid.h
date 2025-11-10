@@ -7,8 +7,12 @@
 #include <vtkCellArray.h>
 #include <vtkXMLUnstructuredGridWriter.h>
 #include <vtkFloatArray.h>
+#include <vtkUnsignedCharArray.h>
 #include <vtkPointData.h>
 #include <vtkCellData.h>
+#include <vtkIdTypeArray.h>
+#include <vtkCellType.h>
+#include <unordered_map>
 
 #include "odbmanager.h"
 

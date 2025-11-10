@@ -7,7 +7,6 @@
 #include <QVTKOpenGLNativeWidget.h>
 #include <QFileDialog>
 #include <QMessageBox>
-#include <QStandardItemModel>
 #include <map>
 #include <memory>
 #include "vtkdisplay.h"

@@ -1,13 +1,16 @@
 #include "vtkdisplay.h"
+#include <algorithm>
+#include <vtkArrayCalculator.h>
+#include <vtkDataArray.h>
+#include <vtkDataSet.h>
 
 VTKDisplayManager::VTKDisplayManager()
 {
-    // 创建渲染器和窗口
-    renderer = vtkSmartPointer<vtkRenderer>::New();
-    renderWindow = vtkSmartPointer<vtkGenericOpenGLRenderWindow>::New();
+    m_renderer = vtkSmartPointer<vtkRenderer>::New();
+    m_renderWindow = vtkSmartPointer<vtkGenericOpenGLRenderWindow>::New();
 
-    renderWindow->AddRenderer(renderer);
-    renderer->SetBackground(0.7, 0.7, 0.7); // 深蓝色背景
+    m_renderWindow->AddRenderer(m_renderer);
+    m_renderer->SetBackground(0.7, 0.7, 0.7);
 
     m_mapper = nullptr;
     m_actor = nullptr;
@@ -15,7 +18,6 @@ VTKDisplayManager::VTKDisplayManager()
     m_lut = nullptr;
 }
 
-// 显示网格（线框模式）
 void VTKDisplayManager::displayWireframe(vtkUnstructuredGrid* grid)
 {
     if (!m_mapper)
@@ -24,7 +26,7 @@ void VTKDisplayManager::displayWireframe(vtkUnstructuredGrid* grid)
         m_actor = vtkSmartPointer<vtkActor>::New();
 
     m_mapper->SetInputData(grid);
-    m_mapper->SetScalarVisibility(false); // 线框禁用标量显示
+    m_mapper->SetScalarVisibility(false);
 
     m_actor->SetMapper(m_mapper);
     m_actor->GetProperty()->SetRepresentationToWireframe();
@@ -32,20 +34,16 @@ void VTKDisplayManager::displayWireframe(vtkUnstructuredGrid* grid)
     m_actor->GetProperty()->SetLineWidth(1.0);
 
     if (!m_actorAdded) {
-        renderer->AddActor(m_actor);
+        m_renderer->AddActor(m_actor);
         m_actorAdded = true;
     }
 
-    // 若之前存在色标，线框模式不显示色标
     if (m_scalarBar && m_scalarBarAdded) {
-        renderer->RemoveActor2D(m_scalarBar);
+        m_renderer->RemoveActor2D(m_scalarBar);
         m_scalarBarAdded = false;
     }
-
-    std::cout << "[Info] 线框显示（复用 actor/mapper）" << std::endl;
 }
 
-// 显示网格（实体模式）
 void VTKDisplayManager::displaySolid(vtkUnstructuredGrid* grid)
 {
     if (!m_mapper)
@@ -54,7 +52,7 @@ void VTKDisplayManager::displaySolid(vtkUnstructuredGrid* grid)
         m_actor = vtkSmartPointer<vtkActor>::New();
 
     m_mapper->SetInputData(grid);
-    m_mapper->SetScalarVisibility(false); // 实体基础显示禁用标量
+    m_mapper->SetScalarVisibility(false);
 
     m_actor->SetMapper(m_mapper);
     m_actor->GetProperty()->SetRepresentationToSurface();
@@ -62,20 +60,17 @@ void VTKDisplayManager::displaySolid(vtkUnstructuredGrid* grid)
     m_actor->GetProperty()->SetOpacity(0.8);
 
     if (!m_actorAdded) {
-        renderer->AddActor(m_actor);
+        m_renderer->AddActor(m_actor);
         m_actorAdded = true;
     }
 
     // 去除旧色标
     if (m_scalarBar && m_scalarBarAdded) {
-        renderer->RemoveActor2D(m_scalarBar);
+        m_renderer->RemoveActor2D(m_scalarBar);
         m_scalarBarAdded = false;
     }
-
-    std::cout << "[Info] 实体显示（复用 actor/mapper）" << std::endl;
 }
 
-// 显示带标量场的网格（彩色云图）
 void VTKDisplayManager::displayWithScalarField(vtkUnstructuredGrid* grid,
                                                const std::string& scalarName,
                                                bool usePointData = true)
@@ -85,32 +80,28 @@ void VTKDisplayManager::displayWithScalarField(vtkUnstructuredGrid* grid,
     }
 }
 
-// 添加坐标轴
 void VTKDisplayManager::addAxes()
 {
     vtkSmartPointer<vtkAxesActor> axes = vtkSmartPointer<vtkAxesActor>::New();
     axes->SetTotalLength(1.0, 1.0, 1.0);
 
-    axes_widget = vtkSmartPointer<vtkOrientationMarkerWidget>::New();
-    axes_widget->SetOrientationMarker(axes);
-    axes_widget->SetInteractor(renderWindowInteractor);
-    axes_widget->SetViewport(0.0, 0.0, 0.2, 0.2);
-    axes_widget->SetEnabled(1);
-    axes_widget->InteractiveOff();
-
-    std::cout << "[Info] 添加坐标轴" << std::endl;
+    m_axesWidget = vtkSmartPointer<vtkOrientationMarkerWidget>::New();
+    m_axesWidget->SetOrientationMarker(axes);
+    m_axesWidget->SetInteractor(m_renderWindowInteractor);
+    m_axesWidget->SetViewport(0.0, 0.0, 0.2, 0.2);
+    m_axesWidget->SetEnabled(1);
+    m_axesWidget->InteractiveOff();
 }
 
 // 设置相机视角
 void VTKDisplayManager::setCameraView()
 {
-    renderer->ResetCamera();
+    m_renderer->ResetCamera();
 
-    vtkCamera* camera = renderer->GetActiveCamera();
+    vtkCamera* camera = m_renderer->GetActiveCamera();
 
-    // 获取场景边界
     double bounds[6];
-    renderer->ComputeVisiblePropBounds(bounds);
+    m_renderer->ComputeVisiblePropBounds(bounds);
 
     // 计算场景中心和大小
     double center[3] = {
@@ -125,7 +116,6 @@ void VTKDisplayManager::setCameraView()
         bounds[5] - bounds[4]
     });
 
-    // 设置相机位置，确保模型完整可见
     double distance = maxDim * 2.0; // 距离是最大尺寸的2倍
     camera->SetPosition(
         center[0] + distance * 0.7,
@@ -135,27 +125,17 @@ void VTKDisplayManager::setCameraView()
     camera->SetFocalPoint(center[0], center[1], center[2]);
     camera->SetViewUp(0, 0, 1);
 
-    // 调整视角以确保模型完整显示
-    camera->SetViewAngle(30.0); // 设置较小的视角
-
-    // 再次重置相机以确保所有对象都在视野内
-    renderer->ResetCamera();
-
-    // 稍微放大一点以留出边距
+    camera->SetViewAngle(30.0);
+    m_renderer->ResetCamera();
     camera->Zoom(0.8);
-
-    std::cout << "[Info] 相机设置完成 - 场景中心: ("
-              << center[0] << ", " << center[1] << ", " << center[2]
-              << "), 最大尺寸: " << maxDim << std::endl;
 }
 
-// 开始显示
 void VTKDisplayManager::start()
 {
     setCameraView();
     addAxes();
-    renderWindow->Render();
-    renderWindowInteractor->Start();
+    m_renderWindow->Render();
+    m_renderWindowInteractor->Start();
 }
 
 void VTKDisplayManager::addScalarBar(vtkSmartPointer<vtkDataSetMapper> mapper, const std::string& title)
@@ -174,17 +154,17 @@ void VTKDisplayManager::addScalarBar(vtkSmartPointer<vtkDataSetMapper> mapper, c
     m_scalarBar->GetLabelTextProperty()->SetColor(1.0, 1.0, 1.0);
 
     if (!m_scalarBarAdded) {
-        renderer->AddActor2D(m_scalarBar);
+        m_renderer->AddActor2D(m_scalarBar);
         m_scalarBarAdded = true;
     }
 }
 
 void VTKDisplayManager::setInteractor(vtkRenderWindowInteractor* interactor)
 {
-    renderWindowInteractor = interactor;
-    if (renderWindowInteractor)
+    m_renderWindowInteractor = interactor;
+    if (m_renderWindowInteractor)
     {
-        renderWindowInteractor->SetRenderWindow(renderWindow);
+        m_renderWindowInteractor->SetRenderWindow(m_renderWindow);
     }
 }
 
@@ -232,12 +212,11 @@ bool VTKDisplayManager::setActiveScalar(vtkUnstructuredGrid* grid, const std::st
         grid->GetCellData()->SetActiveScalars(name.c_str());
     }
 
-    // 设置查找表范围（基于目标数组）
     double range[2] = {0.0, 1.0};
     arr->GetRange(range);
     m_lut->SetNumberOfTableValues(256);
     m_lut->SetRange(range);
-    m_lut->SetHueRange(0.667, 0.0); // 蓝到红
+    m_lut->SetHueRange(0.667, 0.0);
     m_lut->Build();
 
     m_mapper->SetLookupTable(m_lut);
@@ -248,7 +227,7 @@ bool VTKDisplayManager::setActiveScalar(vtkUnstructuredGrid* grid, const std::st
     m_actor->GetProperty()->SetOpacity(1.0);
 
     if (!m_actorAdded) {
-        renderer->AddActor(m_actor);
+        m_renderer->AddActor(m_actor);
         m_actorAdded = true;
     }
 
@@ -256,13 +235,7 @@ bool VTKDisplayManager::setActiveScalar(vtkUnstructuredGrid* grid, const std::st
     addScalarBar(m_mapper, name);
 
     // 渲染并输出确认信息
-    renderWindow->Render();
-    std::cout << "[Info] 激活标量数组: " << name
-              << ", 范围: [" << range[0] << ", " << range[1] << "]"
-              << ", Actors: " << renderer->GetActors()->GetNumberOfItems()
-              << ", Actors2D: " << renderer->GetActors2D()->GetNumberOfItems()
-              << std::endl;
-
+    m_renderWindow->Render();
     return true;
 }
 

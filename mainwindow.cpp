@@ -1,8 +1,6 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-#include <vtkRenderer.h>
-#include <vtkRenderWindow.h>
 #include <vtkSmartPointer.h>
 #include <vtkInteractorStyleTrackballCamera.h>
 #include "creategrid.h"

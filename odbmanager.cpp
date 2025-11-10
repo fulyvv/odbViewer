@@ -1,6 +1,5 @@
 #include "odbmanager.h"
 
-
 readOdb::readOdb(const char* odbFullname)
 {
     odb_initializeAPI();

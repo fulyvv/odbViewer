@@ -1,9 +1,4 @@
 #include "creategrid.h"
-#include <vtkUnsignedCharArray.h>
-#include <vtkIdTypeArray.h>
-#include <vtkFloatArray.h>
-#include <vtkCellType.h>
-#include <unordered_map>
 
 CreateVTKUnstucturedGrid::CreateVTKUnstucturedGrid(const readOdb& odb)
     : m_odb(odb)
